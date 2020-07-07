@@ -2,13 +2,13 @@
 
 The ESP8266 collects raw sensor data from a MAX30102 
 sensor, analyzes it and computes SP02 and heart-rate (bpm) readings, every 4 seconds. 
-The last 5 good readings are averaged and transmitted to the IOT website Thingspeak
-along with the battery voltage.
+The last 5 good readings are averaged and published (along with the battery voltage) to your 
+channel on the IOT website Thingspeak.
 
 ## Development Environment
 
 * Protoype board with ESP8285 (ESP8266 with built-in 1MB flash), MCP73831 Lipoly charger, 500mAh Lipoly battery.
-* home-brew MAX30102 breakout board (MAX30102 modules are available on AliExpress)
+* Home-brew MAX30102 breakout board. Modules are available on AliExpress.
 * Arduino 1.8.12 on Ubuntu 20.04 amdx64
 
 ## Prototype
@@ -34,22 +34,20 @@ WiFi access point with SSID "SPO2_HeartRate". Connect to this access point withi
 and open the webpage 192.168.4.1 to access the Wifi configuration page where you enter the 
 Internet access point SSID and password. Then reset or cycle power to the module.
 * Wiith normal sensor operation, the blue LED will flash every 4-second measurement cycle
-* The yellow LED will flash every time an update to Thingspeak channel has been published. This should
-happen every ~20s if all measurement cycles produced good data. The updates are averaged values of the last
-5 good measurements.
+* The yellow LED will flash every time an update to Thingspeak channel has been published. The updates are averaged values of the last 5 good measurements. This should happen every ~20s if all measurement cycles produced good data. 
 
 <img src="screenshot.png"/>
 
-## Saving power
-In case of error conditions, the module will indicate internet access issues with a rapidly blinking yellow
-LED, and sensor reading issues with a rapidly blinking blue LED, and then go to sleep. This is to 
-save battery power. You will have to switch off and on the module again for normal usage.
+## Fault handling
 
-* If unable to connect to an existing Internet access point, and the Wifi configuration portal times out,
-the module will flash the yellow LED rapidly for 5 seconds and then go to sleep.
-* If unable to configure the MAX30102 sensor, the blue LED will blink rapidly for 5 seconds and then go to sleep.
-* If unable to detect valid spo2/pulse readings for 2 minutes, the module will flash the blue LED
-rapidly for 5 seconds and then go to sleep.
+In case of error conditions, the unit will indicate the fault with a rapidly blinking LED for 5 seconds,
+and then go to sleep, to save battery power. You will have to switch the unit off and on again to recover.
+
+* Unable to connect to an existing Internet access point, and the Wifi configuration portal timed out (YELLOW LED)
+* Unable to publish data to ThingSpeak for the last 3 attempts (YELLOW LED)
+* Battery voltage is too low (BLUE LED)   
+* Unable to connect to or configure the MAX30102 sensor (BLUE LED)
+* Unable to detect valid spo2/pulse readings for 2 minutes (BLUE LED)
 
 
 
