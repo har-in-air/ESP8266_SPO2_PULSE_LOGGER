@@ -1,7 +1,7 @@
 # ESP8266_MAX30102_SPO2_PULSE_LOGGER
 
 The ESP8266 collects raw sensor data from a MAX30102 
-sensor, analyzes it and computes SP02 and hear-rate (bpm) readings, every 4 seconds. 
+sensor, analyzes it and computes SP02 and heart-rate (bpm) readings, every 4 seconds. 
 The last 5 good readings are averaged and transmitted to the IOT website Thingspeak
 along with the battery voltage.
 
@@ -13,7 +13,7 @@ along with the battery voltage.
 
 ## Prototype
 
-<img src="prototype_hw.jpg" />
+<img src="prototype_hardware.jpg" />
 
 
 ## Credits
@@ -24,7 +24,7 @@ along with the battery voltage.
 * SPO2 & pulse rate measurement code by Robert Fraczkiewicz from 
 [aromring's repository](https://github.com/aromring/MAX30102_by_RF). I tweaked RF's implementation to use 50Hz sample rate. 
 
-* ESP8266 WiFi Access Point & Webpage server code from [Random Nerd tutorials](https://randomnerdtutorials.com/esp8266-nodemcu-access-point-ap-web-server/)
+* WiFiManager SSID and password configuration magic by [tzapu](https://github.com/tzapu/WiFiManager)
 
 ## Usage
 
@@ -46,10 +46,10 @@ LED, and sensor reading issues with a rapidly blinking blue LED, and then go to 
 save battery power. You will have to switch off and on the module again for normal usage.
 
 * If unable to connect to an existing Internet access point, and the Wifi configuration portal times out,
-the module will flash the yellow LED rapidly 20 times and go to sleep.
-* If unable to configure the MAX30102 sensor, the blue LED will blink rapidly 20 times and then go to sleep.
+the module will flash the yellow LED rapidly for 5 seconds and then go to sleep.
+* If unable to configure the MAX30102 sensor, the blue LED will blink rapidly for 5 seconds and then go to sleep.
 * If unable to detect valid spo2/pulse readings for 2 minutes, the module will flash the blue LED
-rapidly 20 times and then go to sleep.
+rapidly for 5 seconds and then go to sleep.
 
 
 
