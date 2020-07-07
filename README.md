@@ -28,26 +28,28 @@ channel on the IOT website Thingspeak.
 
 ## Usage
 
-* On power up, the ESP8285 connects to an existing Internet access point. If the SSID and password 
+* On power up, the unit checks the battery voltage and will blink the blue LED from 1 to 5 times (5 for
+a fully charged battery, 1 for a discharged battery).
+* The ESP8285 then connects to an existing Internet access point. If the SSID and password 
 stored in EEPROM do not work (first time programming, or SSID/password have changed), it acts as a 
 WiFi access point with SSID "SPO2_HeartRate". Connect to this access point within 90 seconds,
 and open the webpage 192.168.4.1 to access the Wifi configuration page where you enter the 
-Internet access point SSID and password. Then reset or cycle power to the module.
-* Wiith normal sensor operation, the blue LED will flash every 4-second measurement cycle
-* The yellow LED will flash every time an update to Thingspeak channel has been published. The updates are averaged values of the last 5 good measurements. This should happen every ~20s if all measurement cycles produced good data. 
+Internet access point SSID and password. Then reset or cycle power to the unit.
+* After every 4-second measurement cycle the blue LED will flash if the spo2 and heart-rate readings are valid.
+* The yellow LED will flash every time an update to Thingspeak channel has been published. The updates are averaged values of the last 5 good measurements. This should happen every ~20s if all the sampling cycles produced good measurements. 
 
 <img src="screenshot.png"/>
 
 ## Fault handling
 
-In case of error conditions, the unit will indicate the fault with a rapidly blinking LED for 5 seconds,
+In case of error conditions, the unit will indicate the fault with a blinking LED for several seconds,
 and then go to sleep, to save battery power. You will have to switch the unit off and on again to recover.
 
-* Unable to connect to an existing Internet access point, and the Wifi configuration portal timed out (YELLOW LED)
-* Unable to publish data to ThingSpeak for the last 3 attempts (YELLOW LED)
-* Battery voltage is too low (BLUE LED)   
-* Unable to connect to or configure the MAX30102 sensor (BLUE LED)
-* Unable to detect valid spo2/pulse readings for 2 minutes (BLUE LED)
+* Unable to connect to an existing Internet access point, and the Wifi configuration portal timed out (YELLOW LED, FAST)
+* Unable to publish data to ThingSpeak for the last 3 attempts (YELLOW LED, SLOW)
+* Battery voltage is too low (BLUE LED, FAST)   
+* Unable to connect to or configure the MAX30102 sensor on power up (BLUE LED, SLOW)
+* Unable to detect valid spo2/pulse readings for 2 minutes (BLUE LED, SLOW)
 
 
 

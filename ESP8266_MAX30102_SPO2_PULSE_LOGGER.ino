@@ -33,6 +33,9 @@ WiFiClient  client;
 #define LEDYellow    13 // internet access indicator
 #define LEDBlue      12 // sensor data indicator
 
+#define BLINK_SLOW  0
+#define BLINK_FAST  1
+
 uint32_t  aun_ir_buffer[RFA_BUFFER_SIZE]; //infrared LED sensor data
 uint32_t  aun_red_buffer[RFA_BUFFER_SIZE];  //red LED sensor data
 int32_t   n_heart_rate; 
@@ -49,10 +52,11 @@ void setup() {
   Serial.begin(230400);
   Serial.println();
   Serial.println("SPO2/Heart-Rate Logger");
-
+  delay(1000);
   float bv = battery_SampleVoltage();
-  // flash the blue led one to five times (5 for fully charged battery, 1 for depleted battery)
+  // flash the blue led slowly one to five times (5 for fully charged battery, 1 for depleted battery)
   battery_IndicateVoltage(bv, LEDBlue);
+  delay(1000);
 
   // ESP8266 tx power output 20.5dBm by default
   // we can lower this to reduce power supply noise caused by tx bursts
@@ -71,16 +75,13 @@ void setup() {
   // of ssid and password. If you do not access the portal page at 192.168.4.1 within 90s, 
   // goes to sleep to save battery power.
   if (!wifiManager.autoConnect("SPO2_HeartRate", "kablooie")) {
-    handleFault("Failed to connect to Internet Access Point, and WiFi configuration timed out", LEDYellow);
+    handleFault("Failed to connect to Internet Access Point, and WiFi configuration timed out", LEDYellow, BLINK_FAST);
     }
     
   Serial.println("Connected as Wifi client");
-  digitalWrite(LEDYellow, 1);
-  delay(1000);
-  digitalWrite(LEDYellow, 0);
   
   if (sensor.begin(Wire, I2C_SPEED_FAST) == false) {
-    handleFault("MAX30102 not found", LEDBlue);
+    handleFault("MAX30102 not found", LEDBlue, BLINK_SLOW);
     }
     
   // ref Maxim AN6409, average dc value of signal should be within 0.25 to 0.75 18-bit range (max value = 262143)
@@ -137,24 +138,23 @@ void loop() {
         if (ch_hr_valid) Serial.print(n_heart_rate); else Serial.print("x");
         Serial.println();
         numSamples = 0;
-        // flash the blue LED. This should happen every ST (= 4) seconds if MAX30102 has been configured correctly
-        digitalWrite(LEDBlue,1);
-        delay(20);
-        digitalWrite(LEDBlue,0);
   
         float battery_voltage = battery_SampleVoltage();
-        if (battery_voltage < 3.4f) {
-          handleFault("Battery discharged", LEDBlue);
+        if (battery_voltage < 3.3f) {
+          handleFault("Battery discharged", LEDBlue, BLINK_FAST);
           }
       
-        // average last five good readings and update Thingspeak
-        // = 20s interval if all readings good
         if (ch_hr_valid && ch_spo2_valid) {
+          // flash the blue LED for a good measurement. This should happen every ST (= 4) seconds if MAX30102 has been configured correctly
+          digitalWrite(LEDBlue,1);
+          delay(10);
+          digitalWrite(LEDBlue,0);
           SensorWatchdogCounter = 0; // feed the watchdog
           spo2_accum += n_spo2;
           heart_rate_accum += n_heart_rate;
           ThingSpeakCounter++;
           Serial.printf("ThingSpeakCounter = %d spo2_accum = %.1f, heartRateAccum = %d\r\n",ThingSpeakCounter, spo2_accum, heart_rate_accum);
+          // average last five good readings and update Thingspeak (so 20s interval if all readings were good)
           if (ThingSpeakCounter >= 5){
             spo2_accum /= ThingSpeakCounter;
             heart_rate_accum /= ThingSpeakCounter;
@@ -168,7 +168,7 @@ void loop() {
         else {
           SensorWatchdogCounter++;
           if (SensorWatchdogCounter >= 30) {
-            handleFault("No valid spo2/pulse readings for the past 2 minutes", LEDBlue);
+            handleFault("No valid spo2/pulse readings for the past 2 minutes", LEDBlue, BLINK_SLOW);
             }
           }        
         }
@@ -181,7 +181,6 @@ void loop() {
 unsigned long myChannelNumber = 1234567;
 const char * myWriteAPIKey = "ABCDEFGHIJKLMN";
 
-
 void updateThingSpeak(float spo2, int heartRate, float batteryVoltage) {
   ThingSpeak.setField(1, spo2);
   ThingSpeak.setField(2, heartRate);
@@ -192,7 +191,7 @@ void updateThingSpeak(float spo2, int heartRate, float batteryVoltage) {
     Serial.println("Channel update successful.");
     // flash yellow LED to show successful update
     digitalWrite(LEDYellow, 1);
-    delay(20);
+    delay(10);
     digitalWrite(LEDYellow, 0);
     }
   else{
@@ -200,7 +199,7 @@ void updateThingSpeak(float spo2, int heartRate, float batteryVoltage) {
     if (ThingSpeakWatchdogCounter >= 3) {
       char szMsg[60];
       sprintf(szMsg, "Error updating ThingSpeak channel, HTTP code %d",result);
-      handleFault(szMsg, LEDYellow);
+      handleFault(szMsg, LEDYellow, BLINK_SLOW);
       }
   }  
 }
@@ -232,18 +231,18 @@ void battery_IndicateVoltage(float bv, int pinLED) {
     else  numFlashes = 1;
     while (numFlashes--) {
         digitalWrite(pinLED, 1);
-        delay(50);
+        delay(300);
         digitalWrite(pinLED, 0);
         delay(300);
         }
     } 
 
 
-void handleFault(char* szMsg, int pinLED) {
+void handleFault(char* szMsg, int pinLED, int blinkRate) {
   Serial.println(szMsg);
   for (int inx = 0; inx < 50; inx++){
     digitalWrite(pinLED, !digitalRead(pinLED));
-    delay(100);
+    delay(blinkRate == BLINK_FAST ? 100 : 500);
     }
   Serial.println("Going to sleep");
   ESP.deepSleep(0); // can only be woken up by reset/power cycle                      
