@@ -214,7 +214,7 @@ float battery_SampleVoltage(void) {
   // voltage divider with 120K and 33K to scale 4.2V down to < 1.0V for the ESP8266 ADC
   // actual measurement 0.859V with battery voltage = 3.95V => actual scale up from 
   // resistive divider = 3.95/0.859 = 4.5983
-  return (adcSample*4.5983f)/1024.0f; 
+  return (adcSample*4.395f)/1024.0f; 
   }  
 
 
@@ -245,6 +245,7 @@ void handleFault(char* szMsg, int pinLED, int blinkRate) {
     delay(blinkRate == BLINK_FAST ? 100 : 500);
     }
   Serial.println("Going to sleep");
+  sensor.shutDown();
   ESP.deepSleep(0); // can only be woken up by reset/power cycle                      
   }
     
