@@ -200,6 +200,8 @@ void setup() {
     wifiManager.addParameter(&custom_static_gateway);
     wifiManager.addParameter(&custom_static_subnet);
 #endif    
+   // set minimum signal strength of AP SSIDs to show in the list.
+   // reduce this if you are far from the Internet Access Point when configuring the unit.
     wifiManager.setMinimumSignalQuality(75);
     wifiManager.setConfigPortalTimeout(90);
     if (!wifiManager.startConfigPortal("SPO2_HeartRate", "")) {
