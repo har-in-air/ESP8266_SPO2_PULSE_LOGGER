@@ -57,7 +57,7 @@ parameters, you can force the configuration portal to start by pressing the conf
 connected to GPIO0 when you see the blinking red led on power-up. Keep it pressed until the blue LED
 turns on. Now connect to the portal and make your changes.
 
-<img src="ConfigPortal.png" />
+<img src="ConfigPortal1.png" />
 
 <img src="ConfigPortal2.png" />
 
