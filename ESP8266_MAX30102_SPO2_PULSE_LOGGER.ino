@@ -14,27 +14,50 @@
 * 3. WiFiManager SSID and password configuration magic from 
 * https://github.com/tzapu/WiFiManager
 * 
+* 4. Arduino Json 5 library
+* https://github.com/bblanchon/ArduinoJson/tree/5.x
+* 
+* Note : if making changes to the stored parameters, or SPIFFS configuration, 
+* make sure you choose the 'erase all flash' option, then flash the app again 
+* with normal 'erase sketch only' option.
 ******************************************************************/
 
 #include <Arduino.h>
 #include <Wire.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h> 
-#include <WiFiManager.h> 
+#include <FS.h>                   //this needs to be first, or it all crashes and burns...
+#include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
+//#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+//#include <WiFiClient.h>
+#include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
+#include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 #include <pgmspace.h>
 #include "ThingSpeak.h"
 #include "algorithm_by_RF.h"
 #include "MAX30105.h"
 
+// this library works for MAX30102 as well
 MAX30105 sensor;
-
 WiFiClient  client;
 
-#define LEDYellow    13 // internet access indicator
-#define LEDBlue      12 // sensor data indicator
+// config button
+#define CFG         0 
+
+// LED pins
+#define RED        14 // battery indicator
+#define GRN        12 // sensor indicator
+#define BLU        13 // internet indicator
 
 #define BLINK_SLOW  0
 #define BLINK_FAST  1
+
+// 4 second sample cycle, if pulse not detected in one minute, put unit 
+// to sleep to save power
+#define SENSOR_TIMEOUT 15
+
+// RGB led with common anode, pins need to be grounded to turn on
+#define LED_ON(color)  {digitalWrite(color, 0);}
+#define LED_OFF(color) {digitalWrite(color, 1);}
 
 uint32_t  aun_ir_buffer[RFA_BUFFER_SIZE]; //infrared LED sensor data
 uint32_t  aun_red_buffer[RFA_BUFFER_SIZE];  //red LED sensor data
@@ -42,53 +65,222 @@ int32_t   n_heart_rate;
 float     n_spo2;
 int       numSamples;
 
+// These parameters are retrieved from the SPIFFS JSON file
+// If not found, the portal configuration is automatically started
+// The blue LED will come on, you have 90s to connect to the 
+// WiFi access point with SSID 'SPO2_HeartRate', and then open the portal
+// page at http://192.168.4.1 
+// Specify the Internet access point and password, and the 
+// Thingspeak parameters, and click on Save Settings.
 
-void setup() {
-  pinMode(LEDYellow, OUTPUT);
-  digitalWrite(LEDYellow, 0);
-  pinMode(LEDBlue, OUTPUT);
-  digitalWrite(LEDBlue, 0);
+char SzThingSpeakChannel[10] = {0};
+char SzThingSpeakWriteAPIKey[20] = {0};
+
+unsigned long ThingSpeakChannel = 0;
+
+// static IP address doesn't work with some access points e.g.
+// cellphone used as hotspot
+
+#ifdef USE_STATIC_IP_ADDRESS  
+char SzStaticIPAddr[16] = {0};
+char SzStaticGateway[16] = {0};
+char SzStaticSubnet[16] = {0};
+char SzDNS[16]  = "8.8.8.8";
+#endif
+
+//String SzSSID;
+//String SzPassword;
+
+bool FlagSaveConfig = false;
+
+void saveConfigCallback () {
+  Serial.println("Parameters were modified, need to save config.json");
+  FlagSaveConfig = true;
+  }
   
-  Serial.begin(230400);
+void setup() {
+  Serial.begin(115200);
+  pinMode(RED, OUTPUT);
+  LED_OFF(RED);
+  pinMode(GRN, OUTPUT);
+  LED_OFF(GRN);
+  pinMode(BLU, OUTPUT);
+  LED_OFF(BLU);
   Serial.println();
   Serial.println("SPO2/Heart-Rate Logger");
-  delay(1000);
-  float bv = battery_SampleVoltage();
-  // flash the blue led slowly one to five times (5 for fully charged battery, 1 for depleted battery)
-  battery_IndicateVoltage(bv, LEDBlue);
-  delay(1000);
+  Serial.print("Code compiled on "); Serial.print(__DATE__); Serial.print(" at "); Serial.println(__TIME__);
+    
+  Serial.println("Mounting FS");
+  if (SPIFFS.begin()) {
+    Serial.println("Mounted file system");
+    if (SPIFFS.exists("/config.json")) {
+      Serial.println("Reading config.json file");
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println("Opened config file");
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+        configFile.readBytes(buf.get(), size);
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& json = jsonBuffer.parseObject(buf.get());
+        json.printTo(Serial);
+        if (json.success()) {
+          Serial.println("\nParsed json");
+          strcpy(SzThingSpeakChannel, json["ts_channel"]);
+          strcpy(SzThingSpeakWriteAPIKey, json["ts_wr_api_key"]);
+#ifdef USE_STATIC_IP_ADDRESS  
+          strcpy(SzStaticIPAddr, json["ipaddr"]);
+          strcpy(SzStaticGateway, json["gateway"]);
+          strcpy(SzStaticSubnet, json["subnet"]);
+#endif
+          } 
+      else {
+          Serial.println("Failed to load config.json");
+          }
+      }
+    }
+  } else {
+    Serial.println("Failed to mount FS");
+    }
+
+  Serial.printf("ThingSpeak Channel = %s\r\n", SzThingSpeakChannel);
+  Serial.printf("ThingSpeak Write API Key = %s\r\n", SzThingSpeakWriteAPIKey);
+#ifdef USE_STATIC_IP_ADDRESS  
+  Serial.printf("Static IP Address = %s\r\n", SzStaticIPAddr);
+  Serial.printf("Static Gateway = %s\r\n", SzStaticGateway);
+  Serial.printf("Static Subnet = %s\r\n", SzStaticSubnet);
+#endif    
+  pinMode(CFG, INPUT);
+  
+  // If you want to change Internet Access Point SSID/Password, or ThingSpeak credentials : 
+  // When you see the battery indication RED led blinking,
+  // press config button and keep it pressed until you see the blue led turn on
+
+  float batVoltage = battery_SampleVoltage();
+  // blink the RED led slowly one to five times (5 for fully charged battery, 1 for depleted battery)
+  battery_IndicateVoltage(batVoltage, RED);
+  delay(500);
+
+  // If config button is pressed, or the Thingspeak credential strings are empty :
+  // Starts an access point with the name "SPO2_HeartRate"
+  // and goes into a blocking loop for up to 90 seconds, waiting for user configuration
+  // of IAP ssid and password. If you do not access the unit's portal page at http://192.168.4.1 within 90s, 
+  // it indicates failure by blinking the blue LED rapidly, and then goes to sleep to 
+  // save battery power. Turn off and turn on the unit, and try again.
+  int flagConfigRequired = (digitalRead(CFG) == 0) | (strlen(SzThingSpeakChannel) == 0)  | (strlen(SzThingSpeakWriteAPIKey) == 0)
+#ifdef USE_STATIC_IP_ADDRESS    
+  |  (strlen(SzStaticIPAddr) == 0) | (strlen(SzStaticGateway) == 0) | (strlen(SzStaticSubnet) == 0)
+#endif  
+  ;
+
+  if ( flagConfigRequired ) {
+    LED_ON(BLU);
+    WiFiManager wifiManager;
+    Serial.println("** CONFIGURATION REQUIRED  **\r\n");
+    WiFiManagerParameter custom_thingspeak_channel("ts_channel", "TS Channel", SzThingSpeakChannel, 10);
+    WiFiManagerParameter custom_thingspeak_write_api_key("ts_wr_api_key", "TS Write API Key", SzThingSpeakWriteAPIKey, 20);
+#ifdef USE_STATIC_IP_ADDRESS    
+    WiFiManagerParameter custom_static_ipaddr("ipaddr", "Static IPAddr", SzStaticIPAddr, 16);
+    WiFiManagerParameter custom_static_gateway("gateway", "Static Gateway", SzStaticGateway, 16);
+    WiFiManagerParameter custom_static_subnet("subnet", "Static Subnet", SzStaticSubnet, 16);
+#endif
+    wifiManager.setSaveConfigCallback(saveConfigCallback);
+#ifdef USE_STATIC_IP_ADDRESS        
+    IPAddress ipaddr, gateway, subnet;
+    ipaddr.fromString(SzStaticIPAddr);
+    gateway.fromString(SzStaticGateway);
+    subnet.fromString(SzStaticSubnet);
+    wifiManager.setSTAStaticIPConfig(ipaddr, gateway, subnet);  
+#endif    
+    wifiManager.addParameter(&custom_thingspeak_channel);
+    wifiManager.addParameter(&custom_thingspeak_write_api_key);
+#ifdef USE_STATIC_IP_ADDRESS    
+    wifiManager.addParameter(&custom_static_ipaddr);
+    wifiManager.addParameter(&custom_static_gateway);
+    wifiManager.addParameter(&custom_static_subnet);
+#endif    
+    wifiManager.setMinimumSignalQuality(75);
+    wifiManager.setConfigPortalTimeout(90);
+    if (!wifiManager.startConfigPortal("SPO2_HeartRate", "")) {
+      handleFault("Failed to connect to Internet Access Point, and WiFi configuration timed out", BLU, BLINK_FAST);
+      }
+    // configuration successful, now connected to Internet Access Point in station mode  
+    //SzSSID = wifiManager.getSSID();
+    //SzPassword = wifiManager.getPassword();
+    //Serial.printf("SSID = %s\r\n", SzSSID.c_str()); 
+    //Serial.printf("Password = %s\r\n", SzPassword.c_str()); 
+    Serial.println("Return from Config Portal, connected as Wifi station");
+    strcpy(SzThingSpeakChannel, custom_thingspeak_channel.getValue());
+    strcpy(SzThingSpeakWriteAPIKey, custom_thingspeak_write_api_key.getValue());
+#ifdef USE_STATIC_IP_ADDRESS    
+    strcpy(SzStaticIPAddr, custom_static_ipaddr.getValue());
+    strcpy(SzStaticGateway, custom_static_gateway.getValue());
+    strcpy(SzStaticSubnet, custom_static_subnet.getValue());
+#endif
+    if (FlagSaveConfig) {
+      Serial.println("Changes made, saving config.json");
+      DynamicJsonBuffer jsonBuffer;
+      JsonObject& json = jsonBuffer.createObject();
+      json["ts_channel"] = SzThingSpeakChannel;
+      json["ts_wr_api_key"] = SzThingSpeakWriteAPIKey;
+#ifdef USE_STATIC_IP_ADDRESS    
+      json["ipaddr"] = SzStaticIPAddr;
+      json["gateway"] = SzStaticGateway;
+      json["subnet"] = SzStaticSubnet;
+#endif
+      File configFile = SPIFFS.open("/config.json", "w");
+      if (!configFile) {
+        Serial.println("Failed to open config.json file for writing");
+        }
+      json.prettyPrintTo(Serial);
+      json.printTo(configFile);
+      configFile.close();
+      }    
+    LED_OFF(BLU);
+    }
+ else {
+    Serial.println("Connecting in station mode with Internet Access Point SSID and password retrieved from flash");
+#ifdef USE_STATIC_IP_ADDRESS    
+    IPAddress ipaddr, gateway, subnet, dns;
+    ipaddr.fromString(SzStaticIPAddr);
+    gateway.fromString(SzStaticGateway);
+    subnet.fromString(SzStaticSubnet);
+    dns.fromString(SzDNS);
+    const char* deviceName = "ESP8266_SPO2_PULSE_LOG.001";
+    WiFi.hostname(deviceName); // DHCP Hostname
+    WiFi.config(ipaddr, subnet, gateway, dns);
+#endif
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(); // use SSID and password retrieved from flash
+    int counter = 0;
+    while ((counter < 20) && (WiFi.status() != WL_CONNECTED)) {
+      delay(500);
+      counter++;
+      Serial.print(".");
+      }   
+    if (counter >= 20) {
+      handleFault("Unable to connect to Internet Access Point", GRN, BLINK_FAST);
+      }      
+    Serial.println("Connected as Wifi client");
+    }
 
   // ESP8266 tx power output 20.5dBm by default
   // we can lower this to reduce power supply noise caused by tx bursts
   WiFi.setOutputPower(12); 
-
-  Serial.println();
-  Serial.print("Code compiled on "); Serial.print(__DATE__); Serial.print(" at "); Serial.println(__TIME__);
-  //String macID = WiFi.macAddress();
-  //Serial.print("Module mac address ; "); Serial.println(macID);
-
-  WiFiManager wifiManager;
-  wifiManager.setConfigPortalTimeout(90);
-  // Fetches ssid and password from eeprom and tries to connect
-  // If it does not connect it starts an access point with the name "SPO2_HeartRate"
-  // and goes into a blocking loop for up to 90 seconds, waiting for user configuration
-  // of ssid and password. If you do not access the portal page at 192.168.4.1 within 90s, 
-  // goes to sleep to save battery power.
-  if (!wifiManager.autoConnect("SPO2_HeartRate", "kablooie")) {
-    handleFault("Failed to connect to Internet Access Point, and WiFi configuration timed out", LEDYellow, BLINK_FAST);
-    }
-    
-  Serial.println("Connected as Wifi client");
+  char* ptr;
+  ThingSpeakChannel = strtoul(SzThingSpeakChannel, &ptr, 10);
+  Serial.printf("ThingSpeakChannel number = %lu\r\n", ThingSpeakChannel);
   
   if (sensor.begin(Wire, I2C_SPEED_FAST) == false) {
-    handleFault("MAX30102 not found", LEDBlue, BLINK_SLOW);
+    handleFault("MAX30102 not found", GRN, BLINK_SLOW);
     }
     
   // ref Maxim AN6409, average dc value of signal should be within 0.25 to 0.75 18-bit range (max value = 262143)
   // You should test this as per the app note depending on application : finger, forehead, earlobe etc. It even
   // depends on skin tone.
   // I found that the optimum combination for my index finger was :
-  // ledBrightness=30 and adcRange=2048, to get max dynamic range in the waveform, and a dc level > 100000
+  // ledBrightness=30 and adcRange=2048, to get max dynamic range in the waveform, and a dc level > 100,000
   byte ledBrightness = 30; // 0 = off,  255 = 50mA
   byte sampleAverage = 4; // 1, 2, 4, 8, 16, 32
   byte ledMode = 2; // 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green (MAX30105 only)
@@ -106,9 +298,9 @@ void setup() {
 
 
 // minimum ThingSpeak update interval is 15 seconds, we will update once every 20 seconds
-int ThingSpeakCounter = 0;
+int SampleCycleCounter = 0;
 
-// if no valid heartrate/spo2 data found for 2 minutes, go to sleep
+// if no valid heartrate/spo2 data found for 1 minute, go to sleep
 int SensorWatchdogCounter = 0;
 
 // if unable to publish data to ThingSpeak with 3 attempts, go to sleep
@@ -141,34 +333,32 @@ void loop() {
   
         float battery_voltage = battery_SampleVoltage();
         if (battery_voltage < 3.3f) {
-          handleFault("Battery discharged", LEDBlue, BLINK_FAST);
+          handleFault("Battery discharged", RED, BLINK_FAST);
           }
       
         if (ch_hr_valid && ch_spo2_valid) {
-          // flash the blue LED for a good measurement. This should happen every ST (= 4) seconds if MAX30102 has been configured correctly
-          digitalWrite(LEDBlue,1);
-          delay(10);
-          digitalWrite(LEDBlue,0);
+          // flash the green LED for a good measurement. This should happen every ST (= 4) seconds if MAX30102 has been configured correctly
+          flashLED(GRN);
           SensorWatchdogCounter = 0; // feed the watchdog
           spo2_accum += n_spo2;
           heart_rate_accum += n_heart_rate;
-          ThingSpeakCounter++;
-          Serial.printf("ThingSpeakCounter = %d spo2_accum = %.1f, heartRateAccum = %d\r\n",ThingSpeakCounter, spo2_accum, heart_rate_accum);
+          SampleCycleCounter++;
+          Serial.printf("SampleCycleCounter = %d spo2_accum = %.1f, heartRateAccum = %d\r\n",SampleCycleCounter, spo2_accum, heart_rate_accum);
           // average last five good readings and update Thingspeak (so 20s interval if all readings were good)
-          if (ThingSpeakCounter >= 5){
-            spo2_accum /= ThingSpeakCounter;
-            heart_rate_accum /= ThingSpeakCounter;
-            Serial.printf("Avg : ThingSpeakCounter = %d spo2_accum = %.1f, heartRateAccum = %d batteryVoltage %.2f\r\n",ThingSpeakCounter, spo2_accum, heart_rate_accum, battery_voltage);
+          if (SampleCycleCounter >= 5){
+            spo2_accum /= SampleCycleCounter;
+            heart_rate_accum /= SampleCycleCounter;
+            Serial.printf("Avg : SampleCycleCounter = %d spo2_accum = %.1f, heartRateAccum = %d batteryVoltage %.2f\r\n",SampleCycleCounter, spo2_accum, heart_rate_accum, battery_voltage);
             updateThingSpeak(spo2_accum, heart_rate_accum, battery_voltage);
-            ThingSpeakCounter = 0;
+            SampleCycleCounter = 0;
             spo2_accum = 0.0;
             heart_rate_accum = 0;            
             }
           }
         else {
           SensorWatchdogCounter++;
-          if (SensorWatchdogCounter >= 30) {
-            handleFault("No valid spo2/pulse readings for the past 2 minutes", LEDBlue, BLINK_SLOW);
+          if (SensorWatchdogCounter >= SENSOR_TIMEOUT) {
+            handleFault("No valid spo2/pulse readings for the past minute", GRN, BLINK_FAST);
             }
           }        
         }
@@ -177,29 +367,23 @@ void loop() {
   }
   
 
-// use your Thingspeak channel number and  write api key
-unsigned long myChannelNumber = 1234567;
-const char * myWriteAPIKey = "ABCDEFGHIJKLMN";
-
 void updateThingSpeak(float spo2, int heartRate, float batteryVoltage) {
   ThingSpeak.setField(1, spo2);
   ThingSpeak.setField(2, heartRate);
   ThingSpeak.setField(3, batteryVoltage);
-  int result = ThingSpeak.writeFields( myChannelNumber, myWriteAPIKey);
+  int result = ThingSpeak.writeFields( ThingSpeakChannel, SzThingSpeakWriteAPIKey);
   if (result == 200){
     ThingSpeakWatchdogCounter = 0;
     Serial.println("Channel update successful.");
-    // flash yellow LED to show successful update
-    digitalWrite(LEDYellow, 1);
-    delay(10);
-    digitalWrite(LEDYellow, 0);
+    // flash blue LED to show successful update
+    flashLED(BLU);
     }
   else{
     ThingSpeakWatchdogCounter++;
     if (ThingSpeakWatchdogCounter >= 3) {
       char szMsg[60];
       sprintf(szMsg, "Error updating ThingSpeak channel, HTTP code %d",result);
-      handleFault(szMsg, LEDYellow, BLINK_SLOW);
+      handleFault(szMsg, BLU, BLINK_SLOW);
       }
   }  
 }
@@ -219,7 +403,7 @@ float battery_SampleVoltage(void) {
 
 
 
-void battery_IndicateVoltage(float bv, int pinLED) {
+void battery_IndicateVoltage(float bv, int LED) {
     int numFlashes;
     if (bv >= 3.95f) numFlashes = 5;
     else
@@ -230,22 +414,30 @@ void battery_IndicateVoltage(float bv, int pinLED) {
     if (bv >= 3.6f) numFlashes = 2;
     else  numFlashes = 1;
     while (numFlashes--) {
-        digitalWrite(pinLED, 1);
+        LED_ON(LED);
         delay(300);
-        digitalWrite(pinLED, 0);
+        LED_OFF(LED);
         delay(300);
         }
     } 
 
+void flashLED(int LED) {
+  LED_ON(LED);
+  delay(10);
+  LED_OFF(LED);
+  }
 
-void handleFault(char* szMsg, int pinLED, int blinkRate) {
+void handleFault(char* szMsg, int LED, int blinkRate) {
   Serial.println(szMsg);
   for (int inx = 0; inx < 50; inx++){
-    digitalWrite(pinLED, !digitalRead(pinLED));
+    digitalWrite(LED, !digitalRead(LED));
     delay(blinkRate == BLINK_FAST ? 100 : 500);
     }
   Serial.println("Going to sleep");
   sensor.shutDown();
+  LED_OFF(RED);
+  LED_OFF(GRN);
+  LED_OFF(BLU);
   ESP.deepSleep(0); // can only be woken up by reset/power cycle                      
   }
     
