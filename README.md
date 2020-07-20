@@ -7,7 +7,7 @@ channel on the IOT website Thingspeak.
 
 ## Development Environment
 
-* Protoype board with ESP8285 (ESP8266 with on-chip 1MB flash), MCP73831 Lipoly charger, 500mAh Lipoly battery.
+* Protoype board with ESP8285 (ESP8266 with on-chip 1MB flash), MCP73831 Lipoly charger, 1000mAh Lipoly battery.
 * Home-brew MAX30102 breakout board. Modules are available on AliExpress.
 * Arduino 1.8.12 on Ubuntu 20.04 amdx64
 
@@ -38,14 +38,13 @@ using a regular ESP8266, choose a similar option (xMB with 64kB SPIFFS).
 SPIFFS partitions and Wifi settings. Flash the application and then revert to "erase sketch only".
 Do this if you make any changes to the SPIFFS partition, or are facing problems with IAP access after
 configuration.
-* The unit uses an RGB led to indicate status. Red for battery status, Green for sensor status,
-Blue for internet status.
-* On power up, the unit checks the battery voltage and will blink the Red LED from 1 to 5 times (5 for
+* The unit uses an RGB led to indicate status and errors.
+* On power up, the unit checks the battery voltage and will flash the LED with magenta colour from 1 to 5 times (5 for
 a fully charged battery, 1 for a discharged battery).
 * The ESP8285 then reads a JSON configuration file in SPIFFS to retrieve the Thingspeak
 parameters (channel number and write API key). If this is the first time (you used the
 'erase all' flash option),
-the AP configuration portal will start up. You will see the blue LED turn on.
+the AP configuration portal will start up, indicated by the LED turning Yellow.
 Connect to the WiFi access point with SSID "SPO2_HeartRate" within 90 seconds,
 and open the webpage 192.168.4.1 to access the Wifi configuration page. Here you enter the 
 Internet access point SSID and password, and the Thingspeak channel number and API key.
@@ -54,16 +53,19 @@ in SPIFFS. (The IAP SSID and password are saved in the Wifi settings flash area)
 Reset or power cycle the unit for normal operation. 
 * If you want to change the Internet Access point configuration SSID/PW, or the Thingspeak
 parameters, you can force the configuration portal to start by pressing the configuration button
-connected to GPIO0 when you see the blinking red led on power-up. Keep it pressed until the blue LED
-turns on. Now connect to the portal and make your changes.
+connected to GPIO0 when you see the blinking magenta led on power-up. Keep it pressed until the LED
+turns yellow. Now connect to the portal and make your changes.
 
 <img src="ConfigPortal1.png" />
 
 <img src="ConfigPortal2.png" />
 
-* After every 4-second measurement cycle the green LED will flash 
-if the software is able to compute valid spo2 and heart-rate readings. 
-* The blue LED will flash every time an update to Thingspeak channel has been published. 
+* After every 4-second measurement cycle the LED will flash 
+if the software is able to compute valid spo2 and heart-rate readings.
+	* BLUE : < 70bpm
+	* GREEN : 70bpm - 85bpm
+	* RED	: >= 85bpm 
+* The LED will flash white every time an update to Thingspeak channel has been published. 
 The updates are averaged values of the last 5 good measurements. This should happen every ~20s 
 if all the sampling cycles produced good measurements. 
 
@@ -71,18 +73,20 @@ if all the sampling cycles produced good measurements.
 
 ## Fault handling
 
-In case of fault conditions, the unit will indicate the problem by blinking an LED for several seconds.
+In case of fault conditions, the unit will indicate the problem by blinking the LED for several seconds.
 The ESP8266 will then shutdown the MAX30102 sensor, turn off the LEDs and go into deep sleep mode.
 This is done to save battery power. To recover, switch the unit off and on again.
 
-* RED LED (Battery)
+* MAGENTA
 	* Battery voltage is too low (fast blink)
-* GREEN LED (Sensor)  
+* TURQUOISE 
 	* Unable to connect to or configure the MAX30102 sensor on power up (fast blink)
 	* Unable to detect valid spo2/pulse readings for 1 minute (slow blink)
-* BLUE LED (WiFi / Internet Access)
+* YELLOW  (WiFi / Internet Access)
 	* Wifi configuration portal timed out (fast blink)
-	* Unable to publish data to ThingSpeak in the last 3 attempts (slow blink)
+	* Unable to connect as station to configured IAP (fast blink)
+* WHITE
+	* Unable to publish data to ThingSpeak in the last 3 attempts (fast blink)
 
 
 

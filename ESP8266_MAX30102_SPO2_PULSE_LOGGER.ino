@@ -40,24 +40,28 @@
 MAX30105 sensor;
 WiFiClient  client;
 
-// config button
-#define CFG         0 
+// config button pin
+#define pinCfg         0 
 
 // LED pins
-#define RED        14 // battery indicator
-#define GRN        12 // sensor indicator
-#define BLU        13 // internet indicator
+#define pinRED        14 
+#define pinGRN        12 
+#define pinBLU        13 
 
-#define BLINK_SLOW  0
-#define BLINK_FAST  1
+typedef enum COLOUR_T {
+  MAGENTA, BLUE, TURQUOISE, GREEN, YELLOW, RED, WHITE
+  } COLOUR;
+
+#define BLINK_FAST  200
+#define BLINK_SLOW  500
 
 // 4 second sample cycle, if pulse not detected in one minute, put unit 
 // to sleep to save power
-#define SENSOR_TIMEOUT 15
+#define SENSOR_TIMEOUT_CYCLES 15
 
 // RGB led with common anode, pins need to be grounded to turn on
-#define LED_ON(color)  {digitalWrite(color, 0);}
-#define LED_OFF(color) {digitalWrite(color, 1);}
+#define LED_ON(pinLED)  {digitalWrite(pinLED, 0);}
+#define LED_OFF(pinLED) {digitalWrite(pinLED, 1);}
 
 uint32_t  aun_ir_buffer[RFA_BUFFER_SIZE]; //infrared LED sensor data
 uint32_t  aun_red_buffer[RFA_BUFFER_SIZE];  //red LED sensor data
@@ -67,7 +71,7 @@ int       numSamples;
 
 // These parameters are retrieved from the SPIFFS JSON file
 // If not found, the portal configuration is automatically started
-// The blue LED will come on, you have 90s to connect to the 
+// The yellow LED will come on, you have 90s to connect to the 
 // WiFi access point with SSID 'SPO2_HeartRate', and then open the portal
 // page at http://192.168.4.1 
 // Specify the Internet access point and password, and the 
@@ -100,12 +104,10 @@ void saveConfigCallback () {
   
 void setup() {
   Serial.begin(115200);
-  pinMode(RED, OUTPUT);
-  LED_OFF(RED);
-  pinMode(GRN, OUTPUT);
-  LED_OFF(GRN);
-  pinMode(BLU, OUTPUT);
-  LED_OFF(BLU);
+  pinMode(pinRED, OUTPUT);
+  pinMode(pinGRN, OUTPUT);
+  pinMode(pinBLU, OUTPUT);
+  LED_Off();
   Serial.println();
   Serial.println("SPO2/Heart-Rate Logger");
   Serial.print("Code compiled on "); Serial.print(__DATE__); Serial.print(" at "); Serial.println(__TIME__);
@@ -151,7 +153,7 @@ void setup() {
   Serial.printf("Static Gateway = %s\r\n", SzStaticGateway);
   Serial.printf("Static Subnet = %s\r\n", SzStaticSubnet);
 #endif    
-  pinMode(CFG, INPUT);
+  pinMode(pinCfg, INPUT);
   
   // If you want to change Internet Access Point SSID/Password, or ThingSpeak credentials : 
   // When you see the battery indication RED led blinking,
@@ -159,7 +161,7 @@ void setup() {
 
   float batVoltage = battery_SampleVoltage();
   // blink the RED led slowly one to five times (5 for fully charged battery, 1 for depleted battery)
-  battery_IndicateVoltage(batVoltage, RED);
+  battery_IndicateVoltage(batVoltage, MAGENTA);
   delay(500);
 
   // If config button is pressed, or the Thingspeak credential strings are empty :
@@ -168,14 +170,14 @@ void setup() {
   // of IAP ssid and password. If you do not access the unit's portal page at http://192.168.4.1 within 90s, 
   // it indicates failure by blinking the blue LED rapidly, and then goes to sleep to 
   // save battery power. Turn off and turn on the unit, and try again.
-  int flagConfigRequired = (digitalRead(CFG) == 0) | (strlen(SzThingSpeakChannel) == 0)  | (strlen(SzThingSpeakWriteAPIKey) == 0)
+  int flagConfigRequired = (digitalRead(pinCfg) == 0) | (strlen(SzThingSpeakChannel) == 0)  | (strlen(SzThingSpeakWriteAPIKey) == 0)
 #ifdef USE_STATIC_IP_ADDRESS    
   |  (strlen(SzStaticIPAddr) == 0) | (strlen(SzStaticGateway) == 0) | (strlen(SzStaticSubnet) == 0)
 #endif  
   ;
 
   if ( flagConfigRequired ) {
-    LED_ON(BLU);
+    LED_On(YELLOW);
     WiFiManager wifiManager;
     Serial.println("** CONFIGURATION REQUIRED  **\r\n");
     WiFiManagerParameter custom_thingspeak_channel("ts_channel", "TS Channel", SzThingSpeakChannel, 10);
@@ -200,12 +202,12 @@ void setup() {
     wifiManager.addParameter(&custom_static_gateway);
     wifiManager.addParameter(&custom_static_subnet);
 #endif    
-   // set minimum signal strength of AP SSIDs to show in the list.
-   // reduce this if you are far from the Internet Access Point when configuring the unit.
-    wifiManager.setMinimumSignalQuality(75);
+   // set minimum signal strength of IAP SSIDs to show in the list.
+   // reduce this if your IAP is not displayed.
+    wifiManager.setMinimumSignalQuality(60);
     wifiManager.setConfigPortalTimeout(90);
     if (!wifiManager.startConfigPortal("SPO2_HeartRate", "")) {
-      handleFault("Failed to connect to Internet Access Point, and WiFi configuration timed out", BLU, BLINK_FAST);
+      handleFault("Failed to connect to Internet Access Point, and WiFi configuration timed out", YELLOW, BLINK_FAST);
       }
     // configuration successful, now connected to Internet Access Point in station mode  
     //SzSSID = wifiManager.getSSID();
@@ -239,7 +241,7 @@ void setup() {
       json.printTo(configFile);
       configFile.close();
       }    
-    LED_OFF(BLU);
+    LED_Off();
     }
  else {
     Serial.println("Connecting in station mode with Internet Access Point SSID and password retrieved from flash");
@@ -262,7 +264,7 @@ void setup() {
       Serial.print(".");
       }   
     if (counter >= 20) {
-      handleFault("Unable to connect to Internet Access Point", GRN, BLINK_FAST);
+      handleFault("Unable to connect to Internet Access Point", YELLOW, BLINK_FAST);
       }      
     Serial.println("Connected as Wifi client");
     }
@@ -275,7 +277,7 @@ void setup() {
   Serial.printf("ThingSpeakChannel number = %lu\r\n", ThingSpeakChannel);
   
   if (sensor.begin(Wire, I2C_SPEED_FAST) == false) {
-    handleFault("MAX30102 not found", GRN, BLINK_SLOW);
+    handleFault("MAX30102 not found", TURQUOISE, BLINK_SLOW);
     }
     
   // ref Maxim AN6409, average dc value of signal should be within 0.25 to 0.75 18-bit range (max value = 262143)
@@ -335,12 +337,13 @@ void loop() {
   
         float battery_voltage = battery_SampleVoltage();
         if (battery_voltage < 3.3f) {
-          handleFault("Battery discharged", RED, BLINK_FAST);
+          handleFault("Battery discharged", MAGENTA, BLINK_FAST);
           }
       
         if (ch_hr_valid && ch_spo2_valid) {
-          // flash the green LED for a good measurement. This should happen every ST (= 4) seconds if MAX30102 has been configured correctly
-          flashLED(GRN);
+          // flash the LED for a good measurement. This should happen every ST (= 4) seconds if MAX30102 has been configured correctly
+		      // LED colour indicates the pulse rate : MAGENTA < 65bpm , BLUE 65-70bpm, TURQUOISE 70-75bpm, GREEN 75-80bpm, YELLOW 80-85bpm,  RED > 85bpm
+          indicateHeartRate(n_heart_rate);
           SensorWatchdogCounter = 0; // feed the watchdog
           spo2_accum += n_spo2;
           heart_rate_accum += n_heart_rate;
@@ -359,8 +362,8 @@ void loop() {
           }
         else {
           SensorWatchdogCounter++;
-          if (SensorWatchdogCounter >= SENSOR_TIMEOUT) {
-            handleFault("No valid spo2/pulse readings for the past minute", GRN, BLINK_FAST);
+          if (SensorWatchdogCounter >= SENSOR_TIMEOUT_CYCLES) {
+            handleFault("No valid spo2/pulse readings for the past minute", TURQUOISE, BLINK_FAST);
             }
           }        
         }
@@ -377,15 +380,15 @@ void updateThingSpeak(float spo2, int heartRate, float batteryVoltage) {
   if (result == 200){
     ThingSpeakWatchdogCounter = 0;
     Serial.println("Channel update successful.");
-    // flash blue LED to show successful update
-    flashLED(BLU);
+    // flash white LED to show successful update
+    flashLED(WHITE);
     }
   else{
     ThingSpeakWatchdogCounter++;
     if (ThingSpeakWatchdogCounter >= 3) {
       char szMsg[60];
       sprintf(szMsg, "Error updating ThingSpeak channel, HTTP code %d",result);
-      handleFault(szMsg, BLU, BLINK_SLOW);
+      handleFault(szMsg, WHITE, BLINK_FAST);
       }
   }  
 }
@@ -405,41 +408,91 @@ float battery_SampleVoltage(void) {
 
 
 
-void battery_IndicateVoltage(float bv, int LED) {
+void battery_IndicateVoltage(float voltage, COLOUR colour) {
     int numFlashes;
-    if (bv >= 3.95f) numFlashes = 5;
+    if (voltage >= 3.95f) numFlashes = 5;
     else
-    if (bv >= 3.8f) numFlashes = 4;
+    if (voltage >= 3.8f) numFlashes = 4;
     else
-    if (bv >= 3.7f) numFlashes = 3;
+    if (voltage >= 3.7f) numFlashes = 3;
     else
-    if (bv >= 3.6f) numFlashes = 2;
+    if (voltage >= 3.6f) numFlashes = 2;
     else  numFlashes = 1;
     while (numFlashes--) {
-        LED_ON(LED);
+        LED_On(colour);
         delay(300);
-        LED_OFF(LED);
+        LED_Off();
         delay(300);
         }
     } 
 
-void flashLED(int LED) {
-  LED_ON(LED);
-  delay(10);
-  LED_OFF(LED);
+void flashLED(COLOUR colour) {
+  LED_On(colour);
+  delay(20);
+  LED_Off();
   }
 
-void handleFault(char* szMsg, int LED, int blinkRate) {
+void LED_On(COLOUR colour) {
+	switch (colour) {
+		case MAGENTA :
+		LED_ON(pinBLU);
+		LED_ON(pinRED);
+		break;
+		case BLUE :
+		LED_ON(pinBLU);
+		break;
+		case TURQUOISE :
+		LED_ON(pinBLU);
+		LED_ON(pinGRN);
+		break;
+		case GREEN:
+		LED_ON(pinGRN);
+		break;
+		case YELLOW:
+		LED_ON(pinRED);
+		LED_ON(pinGRN);
+		break;
+		case RED :
+		LED_ON(pinRED);
+		break;
+		case WHITE :
+		LED_ON(pinRED);
+		LED_ON(pinGRN);
+		LED_ON(pinBLU);
+		default:
+		break;
+		}
+	}
+
+void LED_Off(void) {
+	LED_OFF(pinBLU);
+	LED_OFF(pinRED);
+	LED_OFF(pinGRN);
+	}
+		
+void indicateHeartRate(int pulseRate) {
+	if (pulseRate < 70) {
+			flashLED(BLUE);
+			}
+	else 
+	if (pulseRate < 85) {
+			flashLED(GREEN);
+			}
+	else {
+		flashLED(RED);
+		}
+	}
+	
+void handleFault(char* szMsg, COLOUR colour, int blinkDelayMs) {
   Serial.println(szMsg);
   for (int inx = 0; inx < 50; inx++){
-    digitalWrite(LED, !digitalRead(LED));
-    delay(blinkRate == BLINK_FAST ? 100 : 500);
+    LED_On(colour);
+    delay(blinkDelayMs);
+    LED_Off();
+    delay(blinkDelayMs);
     }
   Serial.println("Going to sleep");
   sensor.shutDown();
-  LED_OFF(RED);
-  LED_OFF(GRN);
-  LED_OFF(BLU);
   ESP.deepSleep(0); // can only be woken up by reset/power cycle                      
   }
     
