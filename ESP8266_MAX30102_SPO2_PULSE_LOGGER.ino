@@ -264,7 +264,7 @@ void setup() {
       Serial.print(".");
       }   
     if (counter >= 20) {
-      handleFault("Unable to connect to Internet Access Point", YELLOW, BLINK_FAST);
+      handleFault("Unable to connect to Internet Access Point", YELLOW, BLINK_SLOW);
       }      
     Serial.println("Connected as Wifi client");
     }
