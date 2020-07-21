@@ -26,15 +26,17 @@
 #include <Wire.h>
 #include <FS.h>                   //this needs to be first, or it all crashes and burns...
 #include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
-//#include <DNSServer.h>
 #include <ESP8266WebServer.h>
-//#include <WiFiClient.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 #include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 #include <pgmspace.h>
 #include "ThingSpeak.h"
 #include "algorithm_by_RF.h"
 #include "MAX30105.h"
+
+extern "C" {
+    #include "user_interface.h"  // Required for wifi_station_connect() to work
+}
 
 // this library works for MAX30102 as well
 MAX30105 sensor;
@@ -51,6 +53,8 @@ WiFiClient  client;
 typedef enum COLOUR_T {
   MAGENTA, BLUE, TURQUOISE, GREEN, YELLOW, RED, WHITE
   } COLOUR;
+
+COLOUR Colour;
 
 #define BLINK_FAST  200
 #define BLINK_SLOW  500
@@ -82,19 +86,7 @@ char SzThingSpeakWriteAPIKey[20] = {0};
 
 unsigned long ThingSpeakChannel = 0;
 
-// static IP address doesn't work with some access points e.g.
-// cellphone used as hotspot
-
-#ifdef USE_STATIC_IP_ADDRESS  
-char SzStaticIPAddr[16] = {0};
-char SzStaticGateway[16] = {0};
-char SzStaticSubnet[16] = {0};
-char SzDNS[16]  = "8.8.8.8";
-#endif
-
-//String SzSSID;
-//String SzPassword;
-
+bool FlagInternetAccess = false;
 bool FlagSaveConfig = false;
 
 void saveConfigCallback () {
@@ -131,11 +123,6 @@ void setup() {
           Serial.println("\nParsed json");
           strcpy(SzThingSpeakChannel, json["ts_channel"]);
           strcpy(SzThingSpeakWriteAPIKey, json["ts_wr_api_key"]);
-#ifdef USE_STATIC_IP_ADDRESS  
-          strcpy(SzStaticIPAddr, json["ipaddr"]);
-          strcpy(SzStaticGateway, json["gateway"]);
-          strcpy(SzStaticSubnet, json["subnet"]);
-#endif
           } 
       else {
           Serial.println("Failed to load config.json");
@@ -148,11 +135,6 @@ void setup() {
 
   Serial.printf("ThingSpeak Channel = %s\r\n", SzThingSpeakChannel);
   Serial.printf("ThingSpeak Write API Key = %s\r\n", SzThingSpeakWriteAPIKey);
-#ifdef USE_STATIC_IP_ADDRESS  
-  Serial.printf("Static IP Address = %s\r\n", SzStaticIPAddr);
-  Serial.printf("Static Gateway = %s\r\n", SzStaticGateway);
-  Serial.printf("Static Subnet = %s\r\n", SzStaticSubnet);
-#endif    
   pinMode(pinCfg, INPUT);
   
   // If you want to change Internet Access Point SSID/Password, or ThingSpeak credentials : 
@@ -170,11 +152,7 @@ void setup() {
   // of IAP ssid and password. If you do not access the unit's portal page at http://192.168.4.1 within 90s, 
   // it indicates failure by blinking the blue LED rapidly, and then goes to sleep to 
   // save battery power. Turn off and turn on the unit, and try again.
-  int flagConfigRequired = (digitalRead(pinCfg) == 0) | (strlen(SzThingSpeakChannel) == 0)  | (strlen(SzThingSpeakWriteAPIKey) == 0)
-#ifdef USE_STATIC_IP_ADDRESS    
-  |  (strlen(SzStaticIPAddr) == 0) | (strlen(SzStaticGateway) == 0) | (strlen(SzStaticSubnet) == 0)
-#endif  
-  ;
+  int flagConfigRequired = (digitalRead(pinCfg) == 0) | (strlen(SzThingSpeakChannel) == 0)  | (strlen(SzThingSpeakWriteAPIKey) == 0)  ;
 
   if ( flagConfigRequired ) {
     LED_On(YELLOW);
@@ -182,26 +160,9 @@ void setup() {
     Serial.println("** CONFIGURATION REQUIRED  **\r\n");
     WiFiManagerParameter custom_thingspeak_channel("ts_channel", "TS Channel", SzThingSpeakChannel, 10);
     WiFiManagerParameter custom_thingspeak_write_api_key("ts_wr_api_key", "TS Write API Key", SzThingSpeakWriteAPIKey, 20);
-#ifdef USE_STATIC_IP_ADDRESS    
-    WiFiManagerParameter custom_static_ipaddr("ipaddr", "Static IPAddr", SzStaticIPAddr, 16);
-    WiFiManagerParameter custom_static_gateway("gateway", "Static Gateway", SzStaticGateway, 16);
-    WiFiManagerParameter custom_static_subnet("subnet", "Static Subnet", SzStaticSubnet, 16);
-#endif
     wifiManager.setSaveConfigCallback(saveConfigCallback);
-#ifdef USE_STATIC_IP_ADDRESS        
-    IPAddress ipaddr, gateway, subnet;
-    ipaddr.fromString(SzStaticIPAddr);
-    gateway.fromString(SzStaticGateway);
-    subnet.fromString(SzStaticSubnet);
-    wifiManager.setSTAStaticIPConfig(ipaddr, gateway, subnet);  
-#endif    
     wifiManager.addParameter(&custom_thingspeak_channel);
     wifiManager.addParameter(&custom_thingspeak_write_api_key);
-#ifdef USE_STATIC_IP_ADDRESS    
-    wifiManager.addParameter(&custom_static_ipaddr);
-    wifiManager.addParameter(&custom_static_gateway);
-    wifiManager.addParameter(&custom_static_subnet);
-#endif    
    // set minimum signal strength of IAP SSIDs to show in the list.
    // reduce this if your IAP is not displayed.
     wifiManager.setMinimumSignalQuality(60);
@@ -217,22 +178,12 @@ void setup() {
     Serial.println("Return from Config Portal, connected as Wifi station");
     strcpy(SzThingSpeakChannel, custom_thingspeak_channel.getValue());
     strcpy(SzThingSpeakWriteAPIKey, custom_thingspeak_write_api_key.getValue());
-#ifdef USE_STATIC_IP_ADDRESS    
-    strcpy(SzStaticIPAddr, custom_static_ipaddr.getValue());
-    strcpy(SzStaticGateway, custom_static_gateway.getValue());
-    strcpy(SzStaticSubnet, custom_static_subnet.getValue());
-#endif
     if (FlagSaveConfig) {
       Serial.println("Changes made, saving config.json");
       DynamicJsonBuffer jsonBuffer;
       JsonObject& json = jsonBuffer.createObject();
       json["ts_channel"] = SzThingSpeakChannel;
       json["ts_wr_api_key"] = SzThingSpeakWriteAPIKey;
-#ifdef USE_STATIC_IP_ADDRESS    
-      json["ipaddr"] = SzStaticIPAddr;
-      json["gateway"] = SzStaticGateway;
-      json["subnet"] = SzStaticSubnet;
-#endif
       File configFile = SPIFFS.open("/config.json", "w");
       if (!configFile) {
         Serial.println("Failed to open config.json file for writing");
@@ -245,16 +196,6 @@ void setup() {
     }
  else {
     Serial.println("Connecting in station mode with Internet Access Point SSID and password retrieved from flash");
-#ifdef USE_STATIC_IP_ADDRESS    
-    IPAddress ipaddr, gateway, subnet, dns;
-    ipaddr.fromString(SzStaticIPAddr);
-    gateway.fromString(SzStaticGateway);
-    subnet.fromString(SzStaticSubnet);
-    dns.fromString(SzDNS);
-    const char* deviceName = "ESP8266_SPO2_PULSE_LOG.001";
-    WiFi.hostname(deviceName); // DHCP Hostname
-    WiFi.config(ipaddr, subnet, gateway, dns);
-#endif
     WiFi.mode(WIFI_STA);
     WiFi.begin(); // use SSID and password retrieved from flash
     int counter = 0;
@@ -264,9 +205,15 @@ void setup() {
       Serial.print(".");
       }   
     if (counter >= 20) {
-      handleFault("Unable to connect to Internet Access Point", YELLOW, BLINK_SLOW);
+      handleFault("Unable to connect to Internet Access Point", YELLOW, BLINK_FAST);
+      FlagInternetAccess = false;
+      WiFiOff(); // saves power (current draw down from 75mA down to 25mA)
+      Serial.println("Unable to connect as Wifi client, continuing without Internet access");
       }      
-    Serial.println("Connected as Wifi client");
+    else {
+      FlagInternetAccess = true;
+      Serial.println("Connected as Wifi client");
+      }
     }
 
   // ESP8266 tx power output 20.5dBm by default
@@ -296,8 +243,10 @@ void setup() {
   sensor.getINT1(); // clear the status registers by reading
   sensor.getINT2();
   numSamples = 0;
-
-  ThingSpeak.begin(client); 
+  if (FlagInternetAccess) {
+    ThingSpeak.begin(client); 
+    WiFiOff();
+    }
   }
 
 
@@ -328,11 +277,8 @@ void loop() {
       if (numSamples == RFA_BUFFER_SIZE) {
         // calculate heart rate and SpO2 after RFA_BUFFER_SIZE samples (ST seconds of samples) using Robert's method
         rf_heart_rate_and_oxygen_saturation(aun_ir_buffer, RFA_BUFFER_SIZE, aun_red_buffer, &n_spo2, &ch_spo2_valid, &n_heart_rate, &ch_hr_valid, &ratio, &correl);     
-        Serial.printf("SP02 ");
-        if (ch_spo2_valid) Serial.print(n_spo2); else Serial.print("x");
-        Serial.print(", Pulse ");
-        if (ch_hr_valid) Serial.print(n_heart_rate); else Serial.print("x");
-        Serial.println();
+        Serial.printf("SP02 %.2f", ch_spo2_valid ? n_spo2 : 0.0f); 
+        Serial.printf(", Pulse %d\r\n", ch_hr_valid ? n_heart_rate : 0);
         numSamples = 0;
   
         float battery_voltage = battery_SampleVoltage();
@@ -341,57 +287,70 @@ void loop() {
           }
       
         if (ch_hr_valid && ch_spo2_valid) {
-          // flash the LED for a good measurement. This should happen every ST (= 4) seconds if MAX30102 has been configured correctly
-		      // LED colour indicates the pulse rate : MAGENTA < 65bpm , BLUE 65-70bpm, TURQUOISE 70-75bpm, GREEN 75-80bpm, YELLOW 80-85bpm,  RED > 85bpm
+          // Set LED indicator for a good measurement. This should update every ST (= 4) seconds if MAX30102 has been configured correctly
+		      // LED colour indicates the pulse rate : BLUE < 70bpm, GREEN 70-75bpm, YELLOW 75-80bpm, RED 80-85bpm, MAGENTA 85-90bpm, WHITE > 90bpm
+          // If spo2/heartrate measurements were not possible, turn off the LED for the duration of the sample cycle (4 seconds)
           indicateHeartRate(n_heart_rate);
           SensorWatchdogCounter = 0; // feed the watchdog
           spo2_accum += n_spo2;
           heart_rate_accum += n_heart_rate;
-          SampleCycleCounter++;
-          Serial.printf("SampleCycleCounter = %d spo2_accum = %.1f, heartRateAccum = %d\r\n",SampleCycleCounter, spo2_accum, heart_rate_accum);
-          // average last five good readings and update Thingspeak (so 20s interval if all readings were good)
-          if (SampleCycleCounter >= 5){
-            spo2_accum /= SampleCycleCounter;
-            heart_rate_accum /= SampleCycleCounter;
-            Serial.printf("Avg : SampleCycleCounter = %d spo2_accum = %.1f, heartRateAccum = %d batteryVoltage %.2f\r\n",SampleCycleCounter, spo2_accum, heart_rate_accum, battery_voltage);
-            updateThingSpeak(spo2_accum, heart_rate_accum, battery_voltage);
-            SampleCycleCounter = 0;
-            spo2_accum = 0.0;
-            heart_rate_accum = 0;            
+          if (FlagInternetAccess) {
+            SampleCycleCounter++;
+            Serial.printf("SampleCycleCounter = %d spo2_accum = %.1f, heartRateAccum = %d\r\n",SampleCycleCounter, spo2_accum, heart_rate_accum);
+            // average last five good readings and update Thingspeak (so 20s interval if all readings were good)
+            if (SampleCycleCounter >= 5){
+              spo2_accum /= SampleCycleCounter;
+              heart_rate_accum /= SampleCycleCounter;
+              Serial.printf("Avg : SampleCycleCounter = %d spo2_accum = %.1f, heartRateAccum = %d batteryVoltage %.2f\r\n",SampleCycleCounter, spo2_accum, heart_rate_accum, battery_voltage);
+              updateThingSpeak(spo2_accum, heart_rate_accum, battery_voltage);
+              SampleCycleCounter = 0;
+              spo2_accum = 0.0;
+              heart_rate_accum = 0;            
+              }
             }
           }
         else {
+          LED_Off();
           SensorWatchdogCounter++;
           if (SensorWatchdogCounter >= SENSOR_TIMEOUT_CYCLES) {
             handleFault("No valid spo2/pulse readings for the past minute", TURQUOISE, BLINK_FAST);
-            }
-          }        
+            }     
+          }
         }
-    }
-  
+      }
   }
   
 
+// turn on Wifi only for the duration of the ThingSpeak connection 
+// current draw with WiFi on = ~70mA avg
+// rest of the time, ~22mA avg with LED on
 void updateThingSpeak(float spo2, int heartRate, float batteryVoltage) {
+  WiFiOn();
+  LED_Off();
   ThingSpeak.setField(1, spo2);
   ThingSpeak.setField(2, heartRate);
   ThingSpeak.setField(3, batteryVoltage);
   int result = ThingSpeak.writeFields( ThingSpeakChannel, SzThingSpeakWriteAPIKey);
   if (result == 200){
+    // feed the watchdog
     ThingSpeakWatchdogCounter = 0;
     Serial.println("Channel update successful.");
-    // flash white LED to show successful update
-    flashLED(WHITE);
+    // briefly turn off the LED to show update event
     }
   else{
+    // if unable to update ThingSpeak channel with 3 consecutive attempts, flag InternetAccess as not available
     ThingSpeakWatchdogCounter++;
     if (ThingSpeakWatchdogCounter >= 3) {
       char szMsg[60];
       sprintf(szMsg, "Error updating ThingSpeak channel, HTTP code %d",result);
-      handleFault(szMsg, WHITE, BLINK_FAST);
+      //handleFault(szMsg, WHITE, BLINK_FAST);
+      FlagInternetAccess = false; // stop trying to update Thingspeak
       }
-  }  
-}
+    }
+  LED_On(Colour);
+  WiFiOff();
+  }
+
 
 float battery_SampleVoltage(void) {
   int adcSample = 0;
@@ -426,14 +385,17 @@ void battery_IndicateVoltage(float voltage, COLOUR colour) {
         }
     } 
 
-void flashLED(COLOUR colour) {
-  LED_On(colour);
+void flashLED(COLOUR c) {
+  LED_Off();
+  LED_On(c);
   delay(20);
   LED_Off();
   }
 
-void LED_On(COLOUR colour) {
-	switch (colour) {
+void LED_On(COLOUR c) {
+  Colour = c;
+  LED_Off();
+	switch (c) {
 		case MAGENTA :
 		LED_ON(pinBLU);
 		LED_ON(pinRED);
@@ -463,23 +425,37 @@ void LED_On(COLOUR colour) {
 		break;
 		}
 	}
+ 
 
 void LED_Off(void) {
 	LED_OFF(pinBLU);
 	LED_OFF(pinRED);
 	LED_OFF(pinGRN);
 	}
-		
+
+    
 void indicateHeartRate(int pulseRate) {
 	if (pulseRate < 70) {
-			flashLED(BLUE);
+			LED_On(BLUE);
 			}
 	else 
-	if (pulseRate < 85) {
-			flashLED(GREEN);
+	if (pulseRate < 75) {
+			LED_On(GREEN);
 			}
+  else 
+  if (pulseRate < 80) {
+      LED_On(YELLOW);
+      }
+  else 
+  if (pulseRate < 85) {
+      LED_On(RED);
+      }
+  else
+  if (pulseRate < 90) {
+      LED_On(MAGENTA);
+      }
 	else {
-		flashLED(RED);
+		LED_On(WHITE);
 		}
 	}
 	
@@ -494,5 +470,25 @@ void handleFault(char* szMsg, COLOUR colour, int blinkDelayMs) {
   Serial.println("Going to sleep");
   sensor.shutDown();
   ESP.deepSleep(0); // can only be woken up by reset/power cycle                      
+  }
+
+// https://arduino.stackexchange.com/questions/43376/can-the-wifi-on-esp8266-be-disabled
+
+void WiFiOn() {
+  wifi_fpm_do_wakeup();
+  wifi_fpm_close();
+  //Serial.println("Reconnecting");
+  wifi_set_opmode(STATION_MODE);
+  wifi_station_connect();
+  }
+
+#define FPM_SLEEP_MAX_TIME 0xFFFFFFF
+
+void WiFiOff() {  
+  wifi_station_disconnect();
+  wifi_set_opmode(NULL_MODE);
+  wifi_set_sleep_type(MODEM_SLEEP_T);
+  wifi_fpm_open();
+  wifi_fpm_do_sleep(FPM_SLEEP_MAX_TIME);  
   }
     
