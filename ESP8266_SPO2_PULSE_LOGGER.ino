@@ -280,6 +280,9 @@ int ThingSpeakWatchdogCounter = 0;
 float SPO2_iir = 0.0f;
 float HeartRate_iir = 0.0f;
 
+// the min/max range is from the RF algorithm
+#define VALID_HEARTRATE_RANGE(h) (h > 40.0f && h < 150.0f ? 1 : 0)
+
 void loop() {
   float ratio,correl; 
   int8_t  ch_spo2_valid = 0;  
@@ -324,9 +327,11 @@ void loop() {
             SampleCycleCounter++;
             // each cycle takes 4 seconds
             if (SampleCycleCounter >= ThingSpeakUpdateSecs/4){
-              Serial.printf("SampleCycleCounter = %d SPO2_iir = %.1f, HeartRate_iir = %.0f BatteryVoltage %.2f\r\n",SampleCycleCounter, SPO2_iir, HeartRate_iir, batteryVoltage);
-              updateThingSpeak(SPO2_iir, (int)(HeartRate_iir+0.5f), batteryVoltage);
               SampleCycleCounter = 0;
+              if (VALID_HEARTRATE_RANGE(HeartRate_iir)){
+                Serial.printf("SampleCycleCounter = %d SPO2_iir = %.1f, HeartRate_iir = %.0f BatteryVoltage %.2f\r\n",SampleCycleCounter, SPO2_iir, HeartRate_iir, batteryVoltage);
+                updateThingSpeak(SPO2_iir, (int)(HeartRate_iir+0.5f), batteryVoltage);
+                }
               }
             }
           }        
