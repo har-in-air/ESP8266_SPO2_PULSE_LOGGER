@@ -41,10 +41,9 @@ the Json 6 library uses a completely different API.
 I selected "generic ESP8285" in the Arduino IDE. So I ended up selecting "generic ESP8266", 
 (1MB with 64kB SPIFFS). If you are
 using a regular ESP8266, choose a similar option (xMB with 64kB SPIFFS).
-* When flashing the first time, select the flash "erase all" option to erase any existing
+* When flashing the first time, select the IDE flash "erase all" option to erase any existing
 SPIFFS partitions and Wifi settings. Flash the application and then revert to "erase sketch only".
-Do this if you make any changes to the SPIFFS partition, configuration parameter additions/deletions, or are facing problems with IAP access after
-configuration.
+Do this if you make any changes to the SPIFFS partition, configuration file structure, or are facing problems with IAP access after configuration.
 * The unit uses an RGB led to indicate status and errors.
 * On power up the battery voltage is indicated by a flashing magenta led. 5 flashes for
 a fully charged battery, down to 1 for a discharged battery.
@@ -54,7 +53,7 @@ parameters (channel number, write API key and update interval). If you used the
 Connect to the WiFi access point with SSID "SPO2_HeartRate" within 90 seconds. On my
 Ubuntu 20.04 machine, the configuration webpage automatically popped up in a separate browser window.
 If that doesn't happen, open your browser and enter the url http://192.168.4.1 to access the Wifi configuration page. Here you enter the 
-Internet access point SSID/password, the Thingspeak channel number, API key and update interval (in seconds). The minimum update interval for a free ThingSpeak subscription is 15 seconds.
+Internet access point SSID/password, the Thingspeak channel number, API key and update interval (in seconds). The **minimum update interval** for a free ThingSpeak subscription is 15 seconds.
 Save the settings. The ThingSpeak parameters will now be saved to a JSON configuration file
 in SPIFFS. The IAP SSID and password are saved in the Wifi settings flash area.
 Reset or power cycle the unit for normal operation. 
@@ -68,18 +67,16 @@ Reset or power cycle the unit for normal operation.
 <img src="ConfigPortal2.png" />
 
 * If you want to change the Internet Access point configuration SSID/PW, or the Thingspeak
-parameters, you can force the configuration portal to start by pressing the configuration button
+parameters, start the configuration portal by pressing the configuration button
 connected to GPIO0 when you see the blinking magenta led on power-up. Keep it pressed until the LED
 turns yellow. Now connect to the portal and make your changes.
 
-
 ### Normal usage : LED indicators if everything is working OK
 
-* On power up, the unit checks the battery voltage and the LED will flash **MAGENTA** from 1 to 5 times (5 for
-a fully charged battery, 1 for a discharged battery).
+* On power up, the unit checks the battery voltage and flashes the LED **MAGENTA** from 1 to 5 times (1 for a discharged battery, 5 for a fully charged battery ).
 * After every 4-second measurement cycle the LED colour will indicate the heartrate range 
 if the software is able to compute valid spo2 and heart-rate readings. If no reading was
-possible (sensor disturbed etc.), the LED will be turned off.
+possible (sensor disturbed, finger not present), the LED will be turned off.
 	* **BLUE**  < 65bpm
 	* **TURQUOISE** 65-70bpm
 	* **GREEN** 70-75bpm
@@ -89,32 +86,30 @@ possible (sensor disturbed etc.), the LED will be turned off.
 	* **WHITE** >= 90bpm 
 * The LED will turn off every time an update to Thingspeak channel is published. This
 normally takes a few seconds. 
- Note that the minimum
-interval for publishing events to a free ThingSpeak subscription channel is 15 seconds.
 
 <img src="screenshot.png"/>
 
 ## Power management
 
 With WiFi on, the average current draw is ~70mA. With WiFi off, the average current draw
-is ~22mA with LED indicator on. So after connecting to the internet
-access point, the unit turns on the WiFi only when attempting to publish an update to
+is ~22mA with LED indicator on. To save power, the unit turns on the WiFi only when publishing an update to
 the ThingSpeak website.
 
-So for every update event cycle, for ~20 seconds the current draw is 22mA, and then for ~4 seconds the current draw is 70mA.
+So during the update interval the current draw is 22mA, and then for the
+ThingSpeak update (4-5 seconds) the current draw is 70mA.
 
 Apparently, if you configure the unit with a static IP address in station mode, connecting
-to the access point is faster. That would shorten the interval when the Wifi radio
-is turned on. But not all access points allow static configuration of IP
+to the access point is faster. That would shorten the time required to publish an update.
+But not all access points allow static configuration of IP
 addresses - e.g. my phone in hotspot mode does not.
 
 ## Recoverable fault handling
 
-* If unable to connect to the configured internet access point, the unit will
-turn off WiFi and continue the sensor sampling with LED indication of heartrate range.
+* If unable to connect to the configured internet access point, the unit will disable
+internet access and continue sensor sampling with LED indication of heartrate range.
 * If unable to connect to the ThingSpeak website to publish updates with 3 consecutive
-attempts, WiFi will be turned
-off and the unit will continue sensor sampling with LED indication of heartrate range.
+attempts, the unit will disable internet access
+and continue sensor sampling with LED indication of heartrate range.
 
 ## Unrecoverable fault handling
 
