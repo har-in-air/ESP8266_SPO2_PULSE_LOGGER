@@ -1,20 +1,24 @@
 # ESP8266_SPO2_PULSE_LOGGER
 
 The ESP8266 collects raw sensor data from a MAX30102 
-sensor, analyzes it and computes SP02 and heart-rate (bpm) readings, every 4 seconds. 
+sensor, analyzes it and computes SP02 and heart-rate (bpm) readings, every 5 seconds. 
 
-An RGB LED is used to indicate the heart-rate range.
+A 128x32 OLED display is used to indicate the SPO2 and heart-rate.
 
-The readings are filtered and published to a 
-channel on the IOT website Thingspeak, with a configurable update interval. 
+The readings are published (with a configurable update interval) to your 
+channel on the IOT website Thingspeak. 
+You can view a 'real-time' chart of the data on your channel page.
 
-All configuration (Internet Access Point SSID/PW, ThingSpeak credentials and update interval)
-is via an AP web portal that is available on-demand by pressing a
-configuration button.
+Internet Access Point SSID/PW, ThingSpeak credentials and update interval are
+configured via an AP web portal that is available on-demand by pressing a
+configuration button after power-up.
 
 ## Development Environment
 
-* Protoype board with ESP8285 (ESP8266 with on-chip 1MB flash), MCP73831 Lipoly charger, 1000mAh Lipoly battery.
+* ESP8285 (ESP8266 with on-chip 1MB flash)
+* 128x32 OLED display
+* MCP73831 Lipoly charger
+* 1000mAh Lipoly battery.
 * Home-brew MAX30102 breakout board. Modules are available on AliExpress.
 * Arduino 1.8.13 on Ubuntu 20.04 amdx64
 
@@ -44,12 +48,9 @@ using a regular ESP8266, choose a similar option (xMB with 64kB SPIFFS).
 * When flashing the first time, select the IDE flash "erase all" option to erase any existing
 SPIFFS partitions and Wifi settings. Flash the application and then revert to "erase sketch only".
 Do this if you make any changes to the SPIFFS partition, configuration file structure, or are facing problems with IAP access after configuration.
-* The unit uses an RGB led to indicate status and errors.
-* On power up the battery voltage is indicated by a flashing magenta led. 5 flashes for
-a fully charged battery, down to 1 for a discharged battery.
 * The ESP8266 reads a JSON configuration file in SPIFFS to retrieve the Thingspeak
 parameters (channel number, write API key and update interval). If you used the
-"erase all" flash option, the configuration file will not exist and the AP configuration portal will start up, indicated by the LED turning yellow.
+"erase all" flash option, the configuration file will not exist and the AP configuration portal will start up.
 Connect to the WiFi access point with SSID "SPO2_HeartRate" within 90 seconds. On my
 Ubuntu 20.04 machine, the configuration webpage automatically popped up in a separate browser window.
 If that doesn't happen, open your browser and enter the url http://192.168.4.1 to access the Wifi configuration page. Here you enter the 
@@ -67,35 +68,22 @@ Reset or power cycle the unit for normal operation.
 <img src="ConfigPortal2.png" />
 
 * If you want to change the Internet Access point configuration SSID/PW, or the Thingspeak
-parameters, start the configuration portal by pressing the configuration button
-connected to GPIO0 when you see the blinking magenta led on power-up. Keep it pressed until the LED
-turns yellow. Now connect to the portal and make your changes.
+parameters, start the AP portal by pressing the configuration button
+connected to GPIO0 when you see the Battery voltage status on the OLED display. Keep it pressed until you
+see confirmation of the portal startup.
+Now connect to the portal and make your changes.
 
-### Normal usage : LED indicators if everything is working OK
-
-* On power up, the unit checks the battery voltage and flashes the LED **MAGENTA** from 1 to 5 times (1 for a discharged battery, 5 for a fully charged battery ).
-* After every 4-second measurement cycle the LED colour will indicate the heartrate range 
-if the software is able to compute valid spo2 and heart-rate readings. If no reading was
-possible (sensor disturbed, finger not present), the LED will be turned off.
-	* **BLUE**  < 65bpm
-	* **TURQUOISE** 65-70bpm
-	* **GREEN** 70-75bpm
-	* **YELLOW** 75-80bpm 
-	* **RED**    80-85bpm 
-	* **MAGENTA** 85-90bpm 
-	* **WHITE** >= 90bpm 
-* The LED will turn off every time an update to Thingspeak channel is published. This
-normally takes a few seconds. 
 
 <img src="screenshot.png"/>
 
 ## Power management
 
 With WiFi on, the average current draw is ~70mA. With WiFi off, the average current draw
-is ~22mA with LED indicator on. To save power, the unit turns on the WiFi only when publishing an update to
+is ~25mA with OLED display on. 
+To save power, the unit turns on the WiFi only when publishing an update to
 the ThingSpeak website.
 
-So during the update interval the current draw is 22mA, and then for the
+So during the update interval the current draw is 25mA, and then for the
 ThingSpeak update (4-5 seconds) the current draw is 70mA.
 
 Apparently, if you configure the unit with a static IP address in station mode, connecting
@@ -106,24 +94,20 @@ addresses - e.g. my phone in hotspot mode does not.
 ## Recoverable fault handling
 
 * If unable to connect to the configured internet access point, the unit will disable
-internet access and continue sensor sampling with LED indication of heartrate range.
+internet access and continue sensor sampling with OLED display of SPO2 and heart-rate.
 * If unable to connect to the ThingSpeak website to publish updates with 3 consecutive
 attempts, the unit will disable internet access
-and continue sensor sampling with LED indication of heartrate range.
+and continue sensor sampling with OLED display of SPO2 and heart-rate.
 
 ## Unrecoverable fault handling
 
-The following error conditions are handled by blinking the LED for several seconds,
-shutting down the MAX30102 sensor, turning off the LED and going into deep sleep mode.
+The following error conditions are handled by 
+shutting down the MAX30102 sensor, turning off the OLED display and going into deep sleep mode.
 This is done to save battery power. To recover, switch the unit off and on again. 
 
-The fault source is indicated by the blinking LED colour.
-
-* MAGENTA
-	* Battery voltage is too low (fast blink)
-* TURQUOISE 
-	* Unable to connect to or configure the MAX30102 sensor on power up (fast blink)
-	* Unable to detect valid SPO2/pulse readings for 1 minute (slow blink)
+* Battery voltage is too low
+* Unable to connect to or configure the MAX30102 sensor on power up
+* Unable to detect valid SPO2/pulse readings for 1 minute
 
 
 

@@ -41,14 +41,14 @@
  * described in this code's Instructable. Typically, different sampling rate
  * and/or sample length would require these paramteres to be adjusted.
  */
- // HN changed FS to 50Hz
-#define ST 4      // Sampling time in s. WARNING: if you change ST, then you MUST recalcuate the sum_X2 parameter below!
-#define FS 50     // Sampling frequency in Hz. WARNING: if you change FS, then you MUST recalcuate the sum_X2 parameter below!
+ 
+#define ST  5     // Sampling time in s. WARNING: if you change ST, then you MUST recalcuate the sum_X2 parameter below!
+#define FS 25     // Sampling frequency in Hz. WARNING: if you change FS, then you MUST recalcuate the sum_X2 parameter below!
 // Sum of squares of ST*FS numbers from -mean_X (see below) to +mean_X incremented be one. For example, given ST=4 and FS=50,
 // the sum consists of 200 terms: (-99.5)^2 + (-98.5)^2 + (-97.5)^2 + ... + (97.5)^2 + (98.5)^2 + (99.5)^2
 // The sum is symmetrc, so you can evaluate it by multiplying its positive half by 2. It is precalcuated here for enhanced 
 // performance.
-const float sum_X2 = 666650.0; // WARNING: you MUST recalculate this sum if you changed either ST or FS above!
+const float sum_X2 = 162750.0; // WARNING: you MUST recalculate this sum if you changed either ST or FS above!
 // WARNING: The two parameters below are CRUCIAL! Proper HR evaluation depends on these.
 #define MAX_HR 180  // Maximal heart rate. To eliminate erroneous signals, calculated HR should never be greater than this number.
 #define MIN_HR 40   // Minimal heart rate. To eliminate erroneous signals, calculated HR should never be lower than this number.
