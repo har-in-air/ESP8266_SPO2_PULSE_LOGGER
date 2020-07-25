@@ -26,7 +26,7 @@ configuration button after power-up.
 
 <img src="prototype_hardware.jpg" />
 
-Here's the [schematic](spo2_pulse_logger_schematic.pdf).
+Here's the [schematic](sp02_pulse_logger_schematic.pdf).
 
 ## Library Usage Notes
 
