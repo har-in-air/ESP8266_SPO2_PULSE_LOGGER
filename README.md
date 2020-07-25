@@ -39,6 +39,15 @@ configuration button after power-up.
 * [Arduino Json 5 library](https://github.com/bblanchon/ArduinoJson/tree/5.x). Note that
 the Json 6 library uses a completely different API.
 
+* [U8G2lib Arduino graphics library](https://github.com/olikraus/U8g2_Arduino)
+
+* [ThingSpeak Arduino library](https://github.com/mathworks/thingspeak-arduino)
+
+## RF auto-correlation algorithm versus FFT spectral analysis - a diversion
+
+I've [archived some code](RFA_versus_FFT_for_heartrate.zip) that does an 
+FFT spectral analysis of the sensor red led waveform to determine the heart-rate. 
+
 ## Usage
 
 * The ESP8285 has 1MByte of on-chip flash memory. I had problems flashing the chip when
@@ -78,13 +87,10 @@ Now connect to the portal and make your changes.
 
 ## Power management
 
-With WiFi on, the average current draw is ~70mA. With WiFi off, the average current draw
-is ~25mA with OLED display on. 
+With OLED display and WiFi on, the average current draw is ~75mA. With OLED display on and WiFi off, the average current draw
+is ~30mA. 
 To save power, the unit turns on the WiFi only when publishing an update to
-the ThingSpeak website.
-
-So during the update interval the current draw is 25mA, and then for the
-ThingSpeak update (4-5 seconds) the current draw is 70mA.
+the ThingSpeak website - this takes about 4-5 seconds.
 
 Apparently, if you configure the unit with a static IP address in station mode, connecting
 to the access point is faster. That would shorten the time required to publish an update.
@@ -102,13 +108,13 @@ and continue sensor sampling with OLED display of SPO2 and heart-rate.
 ## Unrecoverable fault handling
 
 The following error conditions are handled by 
-shutting down the MAX30102 sensor, turning off the OLED display and going into deep sleep mode.
+shutting down the MAX30102 sensor, turning off the OLED display and switching the ESP8285 
+into deep sleep mode.
 This is done to save battery power. To recover, switch the unit off and on again. 
 
 * Battery voltage is too low
 * Unable to connect to or configure the MAX30102 sensor on power up
 * Unable to detect valid SPO2/pulse readings for 1 minute
-
 
 
 
