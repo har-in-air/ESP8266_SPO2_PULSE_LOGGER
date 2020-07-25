@@ -32,7 +32,8 @@ configuration button after power-up.
 [Sparkfun](https://github.com/sparkfun/SparkFun_MAX3010x_Sensor_Library)
 
 * SPO2 & pulse rate measurement code by Robert Fraczkiewicz from 
-[aromring's repository](https://github.com/aromring/MAX30102_by_RF). I tweaked RF's implementation to use 50Hz sample rate. 
+[aromring's repository](https://github.com/aromring/MAX30102_by_RF). 
+I tweaked RF's implementation to use a 125 sample buffer. 
 
 * WiFiManager SSID/password and ThingSpeak configuration magic by [tzapu](https://github.com/tzapu/WiFiManager)
 
