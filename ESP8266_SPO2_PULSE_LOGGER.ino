@@ -225,8 +225,7 @@ void setup() {
       // configuration successful, now connected to Internet Access Point in station mode  
       oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "Config OK");
       oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "IAP %s",WiFi.SSID().c_str());
-      u8g2.sendBuf  
-      \er();  
+      u8g2.sendBuffer();  
       delay(2000);
       FlagInternetAccess = true;
       Serial.println("Return from Config Portal, connected as Wifi station");
