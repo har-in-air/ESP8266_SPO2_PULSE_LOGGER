@@ -26,6 +26,8 @@ configuration button after power-up.
 
 <img src="prototype_hardware.jpg" />
 
+Here's the [schematic](spo2_pulse_logger_schematic.pdf).
+
 ## Library Usage Notes
 
 * MAX30102 sensor initialization and FIFO readout code from 
