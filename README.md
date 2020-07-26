@@ -3,7 +3,7 @@
 The ESP8266 collects raw sensor data from a MAX30102 
 sensor, analyzes it and computes SP02 and heart-rate (bpm) readings, every 5 seconds. 
 
-A 128x32 OLED display is used to indicate the SPO2 and heart-rate.
+A 128x32 OLED display is used to indicate SPO2 and heart-rate.
 
 The readings are published (with a configurable update interval) to your 
 channel on the IOT website Thingspeak. 
@@ -18,15 +18,15 @@ configuration button after power-up.
 * ESP8285 (ESP8266 with on-chip 1MB flash)
 * 128x32 OLED display
 * MCP73831 Lipoly charger
-* 1000mAh Lipoly battery.
+* 1000mAh Lipoly battery
 * Home-brew MAX30102 breakout board. Modules are available on AliExpress.
 * Arduino 1.8.13 on Ubuntu 20.04 amdx64
 
 ## Prototype Hardware
 
-<img src="prototype_hardware.jpg" />
+Here's the [circuit schematic](sp02_pulse_logger_schematic.pdf).
 
-Here's the [schematic](sp02_pulse_logger_schematic.pdf).
+<img src="prototype_hardware.jpg" />
 
 ## Library Usage Notes
 
@@ -79,14 +79,18 @@ Reset or power cycle the unit for normal operation.
 
 <img src="ConfigPortal2.png" />
 
-* If you want to change the Internet Access point configuration SSID/PW, or the Thingspeak
-parameters, start the AP portal by pressing the configuration button
-connected to GPIO0 when you see the Battery voltage status on the OLED display. Keep it pressed until you
+* If you want to change the Internet Access point configuration SSID/PW or the Thingspeak
+parameters, start the AP portal by pressing the configuration button (GPIO0)
+when you see the display prompt. Keep it pressed until you
 see confirmation of the portal startup.
 Now connect to the portal and make your changes.
 
 
 <img src="screenshot.png"/>
+
+* Battery and WiFi status are shown in the left side of the display. If the unit was not able
+to connect to the configured IAP, or if unable to connect to ThingSpeak with 3 consecutive attempts, 
+the Wifi radio is turned off and no WiFi icon will be displayed.
 
 ## Power management
 

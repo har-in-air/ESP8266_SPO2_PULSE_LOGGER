@@ -73,6 +73,8 @@ int ThingSpeakWatchdogCounter = 0;
 float SPO2_iir = 0.0f;
 float HeartRate_iir = 0.0f;
 
+float BatteryVoltage;
+
 // These parameters are retrieved from the SPIFFS JSON file
 // If not found, the portal configuration is automatically started.
 // You have 90s to connect to the  WiFi access point with SSID 
@@ -101,7 +103,7 @@ void saveConfigCallback () {
 
 // clear screen buffer, use large font to print SPO2 and 
 // HeartRate and send to display
-void oled_printSPO2HR(char* format, ...) {  
+void oled_displayData(char* format, ...) {  
   char sz[10];
   va_list args;
   va_start(args, format);
@@ -109,7 +111,33 @@ void oled_printSPO2HR(char* format, ...) {
   va_end(args);
   u8g2.setFont(u8g2_font_logisoso24_tr);
   u8g2.clearBuffer();  
-  u8g2.drawStr(0,31,sz);
+  u8g2.drawStr(14,0,sz);
+
+  // battery status
+  u8g2.drawLine(2,0,4,0);
+  u8g2.drawFrame(0,1,8,16);
+  if (BatteryVoltage >= 4.0f)
+    u8g2.drawBox(2,3,4,12);
+  else
+  if (BatteryVoltage >= 3.9f)
+    u8g2.drawBox(2,5,4,10);
+  else
+  if (BatteryVoltage >= 3.7f)
+    u8g2.drawBox(2,7,4,8);
+  else
+  if (BatteryVoltage >= 3.6f)
+    u8g2.drawBox(2,9,4,6);
+  else 
+  if (BatteryVoltage >= 3.5f)
+    u8g2.drawBox(2,12,4,3);
+
+  // internet access
+  if (FlagInternetAccess) {
+    u8g2.drawCircle(0,31,8, U8G2_DRAW_UPPER_RIGHT);
+    u8g2.drawCircle(0,31,5, U8G2_DRAW_UPPER_RIGHT);
+    u8g2.drawDisc(0,31,2, U8G2_DRAW_UPPER_RIGHT);
+    }
+
   u8g2.sendBuffer(); 
   }
 
@@ -139,9 +167,11 @@ void setup() {
   digitalWrite(pinOLEDPwr, 0);
   delay(100);
   
+  BatteryVoltage = battery_SampleVoltage();
   u8g2.begin();
-
-  oled_printSPO2HR("SPO2  HR");
+  u8g2.setFontPosTop();
+  //u8g2.setFontDirection(0);
+  oled_displayData("SPO2 HR");
   delay(2000);
     
   Serial.println("Mounting FS");
@@ -166,8 +196,8 @@ void setup() {
           strcpy(SzThingSpeakUpdateSecs, json["ts_update_secs"]);
           } 
       else {
-          oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "No config file");
-          oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "found in SPIFFS");
+          oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "No config file");
+          oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "found in SPIFFS");
           u8g2.sendBuffer();        
           Serial.println("Failed to load config.json");
           }
@@ -175,8 +205,8 @@ void setup() {
     }
   } 
  else {
-    oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "Could not mount");
-    oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "SPIFFS file system");
+    oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "Could not mount");
+    oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "SPIFFS file system");
     u8g2.sendBuffer();        
     Serial.println("Failed to mount FS");
     }
@@ -187,11 +217,10 @@ void setup() {
   pinMode(pinCfg, INPUT);
 
   // If you want to change Internet Access Point SSID/Password, or ThingSpeak credentials : 
-  // When you see the battery voltage display, press the config button and keep it pressed until 
+  // When you see the prompt, press the config button and keep it pressed until 
   // you see the portal startup message
-  float batVoltage = battery_SampleVoltage();
-  oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "Battery %.1fV", batVoltage);
-  oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "Press btn for conf");
+  oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "Press button for");
+  oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "IAP/TS config");
   u8g2.sendBuffer();         
   delay(3000);
 
@@ -204,8 +233,8 @@ void setup() {
 
   if ( flagConfigRequired ) {
     WiFiManager wifiManager;
-    oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "Connect to AP");
-    oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "SPO2_HeartRate");
+    oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "Connect to AP");
+    oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "SPO2_HeartRate");
     u8g2.sendBuffer();  
     Serial.println("Starting configuration access point\r\n");
     WiFiManagerParameter custom_thingspeak_channel("ts_channel", "ThingSpeak Channel", SzThingSpeakChannel, 10);
@@ -223,8 +252,8 @@ void setup() {
     // on-demand configuration portal
     if (wifiManager.startConfigPortal("SPO2_HeartRate", "")) {
       // configuration successful, now connected to Internet Access Point in station mode  
-      oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "Config OK");
-      oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "IAP %s",WiFi.SSID().c_str());
+      oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "Config OK");
+      oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "IAP %s",WiFi.SSID().c_str());
       u8g2.sendBuffer();  
       delay(2000);
       FlagInternetAccess = true;
@@ -251,8 +280,8 @@ void setup() {
     else { // configuration failed       
         FlagInternetAccess = false;
         Serial.println("Failed to connect to Internet Access Point, and WiFi configuration timed out");
-        oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "Config portal");
-        oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "timed out");
+        oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "Config portal");
+        oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "timed out");
         u8g2.sendBuffer();  
         delay(2000);
         }
@@ -268,8 +297,8 @@ void setup() {
       Serial.print(".");
       }   
     if (counter >= 10) {
-      oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "No internet");
-      oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "connection");
+      oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "No internet");
+      oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "connection");
       u8g2.sendBuffer();
       delay(2000);
       FlagInternetAccess = false;
@@ -278,8 +307,8 @@ void setup() {
       }      
     else {
       FlagInternetAccess = true;
-      oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "Connected to IAP");
-      oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "%s", WiFi.SSID().c_str());
+      oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "Connected to IAP");
+      oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "%s", WiFi.SSID().c_str());
       u8g2.sendBuffer();
       delay(1500);
       Serial.println("Connected as Wifi client");
@@ -296,8 +325,8 @@ void setup() {
   Serial.printf("ThingSpeak Update Seconds = %lu\r\n", ThingSpeakUpdateSecs);
   
   if (sensor.begin(Wire) == false) {
-    oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "MAX30102 connection");
-    oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "problem");
+    oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "MAX30102 connection");
+    oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "problem");
     u8g2.sendBuffer();  
     delay(3000);
     shutDown();
@@ -350,10 +379,10 @@ void loop() {
         // calculate heart rate and SpO2 using RF algorithm, after RFA_BUFFER_SIZE samples are read
         rf_heart_rate_and_oxygen_saturation(IRBuffer, RFA_BUFFER_SIZE, RedBuffer, &SPO2, &flagSPO2Valid, &HeartRate, &flagHRValid, &ratio, &correl);     
         NumSamples = 0;
-		// periodically check the battery voltage  
-        float batteryVoltage = battery_SampleVoltage();
-        if (batteryVoltage < 3.3f) {
-          oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "Low Battery Voltage");
+		    // periodically check the battery voltage  
+        BatteryVoltage = battery_SampleVoltage();
+        if (BatteryVoltage < 3.3f) {
+          oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "Low Battery Voltage");
           u8g2.sendBuffer();  
           delay(3000);
           shutDown();
@@ -364,20 +393,20 @@ void loop() {
           // apply damping IIR filter to SPO2 and heart-rate readings
           SPO2_iir = SPO2_iir > 0.1f ? 0.6f * SPO2_iir + 0.4f * SPO2 : SPO2;
           HeartRate_iir = HeartRate_iir > 0.1f ?  0.6f * HeartRate_iir + 0.4f * (float)HeartRate : (float)HeartRate;
-          oled_printSPO2HR("%2d%%  %3d", SPO2_iir >= 99.0f ? 99 : (int)(SPO2_iir+0.5f), (int)(HeartRate_iir+0.5f));
+          oled_displayData("%2d%% %3d", SPO2_iir >= 99.0f ? 99 : (int)(SPO2_iir+0.5f), (int)(HeartRate_iir+0.5f));
           }
         else {
           SensorWatchdogCounter++;
           if (SensorWatchdogCounter >= SENSOR_TIMEOUT_CYCLES) {
-            oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "No SPO2/Pulse data");
-            oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "for last minute");
+            oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "No SPO2/Pulse data");
+            oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "for last minute");
             u8g2.sendBuffer();     
             delay(3000);
             shutDown();
             }
           else {     
           	// blank display if spo2/heart-rate could not be computed from the data
-            oled_printSPO2HR("--%%  ---");
+            oled_displayData("        ");
             }
           } 
         Serial.printf("%c SP02_IIR %.2f, Pulse_IIR %.0f\r\n", flagSPO2Valid && flagHRValid ? ' ' : 'x', SPO2_iir, HeartRate_iir);
@@ -385,8 +414,8 @@ void loop() {
         if (FlagInternetAccess) {
             if ((millis() - ThingSpeakTimeMarker) >  (ThingSpeakUpdateSecs*1000)){ 
               ThingSpeakTimeMarker = millis();
-              Serial.printf("SPO2_iir = %.1f, HeartRate_iir = %.0f BatteryVoltage %.2f\r\n", SPO2_iir, HeartRate_iir, batteryVoltage);
-              updateThingSpeak(SPO2_iir, HeartRate_iir, batteryVoltage);
+              Serial.printf("SPO2_iir = %.1f, HeartRate_iir = %.0f BatteryVoltage %.2f\r\n", SPO2_iir, HeartRate_iir, BatteryVoltage);
+              updateThingSpeak(SPO2_iir, HeartRate_iir, BatteryVoltage);
               }
             }
           }        
@@ -398,11 +427,11 @@ void loop() {
 // turn on Wifi only for the duration of the ThingSpeak connection 
 // current draw with OLED display and WiFi on = ~75mA
 // with OLED display on, WiFi off = ~30mA
-void updateThingSpeak(float spo2, float heartRate, float batteryVoltage) {
+void updateThingSpeak(float spo2, float heartRate, float BatteryVoltage) {
   WiFiOn();
   ThingSpeak.setField(1, spo2);
   ThingSpeak.setField(2, (int)(heartRate+0.5f));
-  //ThingSpeak.setField(3, batteryVoltage);
+  //ThingSpeak.setField(3, BatteryVoltage);
   int result = ThingSpeak.writeFields( ThingSpeakChannel, SzThingSpeakWriteAPIKey);
   // check HTTP code
   if (result == 200){
@@ -415,8 +444,8 @@ void updateThingSpeak(float spo2, float heartRate, float batteryVoltage) {
     ThingSpeakWatchdogCounter++;
     if (ThingSpeakWatchdogCounter >= 3) {
       Serial.printf("Error updating ThingSpeak channel, HTTP code %d",result);
-      oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "ThingSpeak update");
-      oled_printBuf(false, 0, 31, u8g2_font_t0_14_mr, "failure");
+      oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "ThingSpeak update");
+      oled_printBuf(false, 0, 16, u8g2_font_t0_14_mr, "failure");
       u8g2.sendBuffer();     
       FlagInternetAccess = false; // stop trying to update Thingspeak
       }
@@ -441,7 +470,7 @@ float battery_SampleVoltage(void) {
 
 void shutDown(void) {  
   Serial.println("Going to sleep");
-  oled_printBuf(true, 0, 16, u8g2_font_t0_14_mr, "Going to sleep");
+  oled_printBuf(true, 0, 0, u8g2_font_t0_14_mr, "Going to sleep");
   u8g2.sendBuffer();     
   delay(2000);
   sensor.shutDown();
