@@ -69,7 +69,6 @@ If that doesn't happen, open your browser and enter the url http://192.168.4.1 t
 Internet access point SSID/password, the Thingspeak channel number, API key and update interval (in seconds). The **minimum update interval** for a free ThingSpeak subscription is 15 seconds.
 Save the settings. The ThingSpeak parameters will now be saved to a JSON configuration file
 in SPIFFS. The IAP SSID and password are saved in the Wifi settings flash area.
-Reset or power cycle the unit for normal operation. 
 
 ### Portal home page
 
@@ -79,17 +78,17 @@ Reset or power cycle the unit for normal operation.
 
 <img src="ConfigPortal2.png" />
 
-* If you want to change the Internet Access point configuration SSID/PW or the Thingspeak
-parameters, start the AP portal by pressing the configuration button (GPIO0)
-when you see the display prompt. Keep it pressed until you
+* If you want to change the Internet Access point configuration SSID/PW or Thingspeak
+credentials, start the AP portal by pressing the configuration button
+when you see the display prompt, just after power-up. Keep it pressed until you
 see confirmation of the portal startup.
 Now connect to the portal and make your changes.
 
 
 <img src="screenshot.png"/>
 
-* Battery and WiFi status are shown in the left side of the display. If the unit was not able
-to connect to the configured IAP, or if unable to connect to ThingSpeak with 3 consecutive attempts, 
+* Battery and WiFi status are shown in the left side of the display. If the unit cannot
+connect to the last configured IAP, or cannot connect to ThingSpeak with 3 consecutive attempts, 
 the Wifi radio is turned off and no WiFi icon will be displayed.
 
 ## Power management
