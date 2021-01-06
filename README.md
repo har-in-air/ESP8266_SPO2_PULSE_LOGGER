@@ -28,6 +28,13 @@ Here's the [circuit schematic](sp02_pulse_logger_schematic.pdf).
 
 <img src="prototype_hardware.jpg" />
 
+
+## Completed Unit
+
+I used a clothes peg with some silicone putty to make a mold for my index finger. If blood circulation
+is restricted, you won't be able to get any readings. So I bent back the clothes peg
+spring to reduce the closing force to the point where it was just enough to allow a snug fit. 
+
 <img src="prototype_hardware_2.jpg" />
 
 ## Library Usage Notes
