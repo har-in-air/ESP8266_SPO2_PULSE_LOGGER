@@ -28,6 +28,8 @@ Here's the [circuit schematic](sp02_pulse_logger_schematic.pdf).
 
 <img src="prototype_hardware.jpg" />
 
+<img src="prototype_hardware_2.jpg" />
+
 ## Library Usage Notes
 
 * MAX30102 sensor initialization and FIFO readout code from 
