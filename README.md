@@ -1,5 +1,5 @@
 # ESP8266_SPO2_PULSE_LOGGER
-
+ 
 The ESP8266 collects raw sensor data from a MAX30102 
 sensor at a sample rate of 25samples/second, and computes SP02 and heart-rate (bpm) readings. The analysis and display is updated every second using a sliding window of the last 125 samples (5 seconds worth of samples). 
 
