@@ -66,7 +66,7 @@ int       NumSamples;
 #define SENSOR_TIMEOUT_CYCLES 60
 int SensorWatchdogCounter = 0;
 
-// if unable to publish data to ThingSpeak with 3 attempts, go to sleep
+// if unable to publish data to ThingSpeak with 3 attempts, stop trying (to save power)
 int ThingSpeakWatchdogCounter = 0;
 
 // IIR filtered data 
