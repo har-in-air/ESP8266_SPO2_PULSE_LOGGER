@@ -35,7 +35,7 @@ is restricted, you won't be able to get any readings. I replaced the original cl
 * Ubuntu 20.04
 * Visual Studio Code + Platformio plugin using Arduino framework for Espressif ESP8285 board
 
-<img src="docs/vsc_screenshot.png">
+<img src="docs/vsc_screenshot_.png">
 
 ## Library Usage Notes
 
