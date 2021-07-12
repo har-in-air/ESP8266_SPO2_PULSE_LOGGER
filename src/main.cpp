@@ -25,30 +25,30 @@
 ******************************************************************/
 
 #include <Arduino.h>
-#include <Wire.h>
-#include <FS.h>                   //this needs to be first, or it all crashes and burns...
 #include <ESP8266WiFi.h>          
-#include <ESP8266WebServer.h>
-#include <WiFiManager.h>          
-#include <ArduinoJson.h>          
-#include <pgmspace.h>
+#include <ThingSpeak.h>
 #include <Ticker.h>
 #include "config.h"
-#include "ThingSpeak.h"
 #include "algorithm_by_RF.h"
 #include "MAX30105.h"
-#include "U8g2lib.h"
-
+#include "oled.h"
+#include "config.h"
 
 extern "C" {
     #include "user_interface.h"  // Required for wifi_station_connect() to work
 }
 
-// this library works for MAX30102 as well
-MAX30105 sensor;
+// config button pin for on-demand Configuration portal
+#define pinCfg         0 
+// PMOS transistor-switched power for OLED display
+// drive low to turn on
+#define pinOLEDPwr    13
+// If pulse not detected in one minute, unit goes to sleep to save power
+#define SENSOR_TIMEOUT_CYCLES 60
+
+MAX30105 sensor;// this library works for MAX30102 as well
 WiFiClient  client;
 Ticker ticker;
-U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE); 
 
 int       CircBufferIndex = 0; // pointer to oldest data in circular buffer
 uint32_t  IRCircBuffer[RFA_BUFFER_SIZE]; //circular infrared LED sensor data buffer
@@ -71,36 +71,13 @@ int ThingSpeakWatchdogCounter = 0;
 
 float BatteryVoltage;
 
-// These parameters are retrieved from the SPIFFS JSON file
-// If not found, the portal configuration is automatically started.
-// You have 90s to connect to the  WiFi access point with SSID 
-// 'SPO2_HeartRate', and then open the portal page at http://192.168.4.1 
-// (if the webpage does not pop up automatically).
-// Specify the Internet access point/password, and the 
-// Thingspeak parameters, and click on Save.
+unsigned long ThingSpeakTimeMarker;// ThingSpeak update interval marker
 
-char SzThingSpeakChannel[10] = {0};
-char SzThingSpeakWriteAPIKey[20] = {0};
-char SzThingSpeakUpdateSecs[5] = {0};
-
-unsigned long ThingSpeakChannel = 0;
-unsigned long ThingSpeakUpdateSecs;
-
-bool FlagInternetAccess = false;
-bool FlagSaveConfig = false;
-
-// ThingSpeak update interval marker
-unsigned long ThingSpeakTimeMarker;
-
-void save_config_callback();
-void oled_display_data(char* format, ...);
-void oled_print_buffer(bool clearBuf, int x, int y, const uint8_t* font, char* format, ...);
 float battery_sample_voltage(void);
 void shut_down(void);  
-void wifi_on();
-void wifi_off();  
 void update_thingspeak(float spo2, float heartRate, float BatteryVoltage);
-void get_sample();
+void read_sensor_sample();
+void sensor_init();
 
 
 void setup() {
@@ -120,42 +97,8 @@ void setup() {
   oled_display_data("SPO2 HR");
   delay(2000);
     
-  Serial.println("Mounting FS");
-  if (SPIFFS.begin()) {
-    Serial.println("Mounted file system");
-    if (SPIFFS.exists("/config.json")) {
-      Serial.println("Reading config.json file");
-      File configFile = SPIFFS.open("/config.json", "r");
-      if (configFile) {
-        Serial.println("Opened config file");
-        size_t size = configFile.size();
-        // Allocate a buffer to store contents of the file.
-        std::unique_ptr<char[]> buf(new char[size]);
-        configFile.readBytes(buf.get(), size);
-        DynamicJsonBuffer jsonBuffer;
-        JsonObject& json = jsonBuffer.parseObject(buf.get());
-        json.printTo(Serial);
-        if (json.success()) {
-          Serial.println("\nParsed json");
-          strcpy(SzThingSpeakChannel, json["ts_channel"]);
-          strcpy(SzThingSpeakWriteAPIKey, json["ts_wr_api_key"]);
-          strcpy(SzThingSpeakUpdateSecs, json["ts_update_secs"]);
-          } 
-      else {
-          oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "No config file");
-          oled_print_buffer(false, 0, 16, u8g2_font_t0_14_mr, "found in SPIFFS");
-          u8g2.sendBuffer();        
-          Serial.println("Failed to load config.json");
-          }
-      }
-    }
-  } 
- else {
-    oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "Could not mount");
-    oled_print_buffer(false, 0, 16, u8g2_font_t0_14_mr, "SPIFFS file system");
-    u8g2.sendBuffer();        
-    Serial.println("Failed to mount FS");
-    }
+  // retrieve wifi and thingspeak configuration data from json file in SPIFFS
+  load_config_data();
 
   Serial.printf("ThingSpeak Channel = %s\r\n", SzThingSpeakChannel);
   Serial.printf("ThingSpeak Write API Key = %s\r\n", SzThingSpeakWriteAPIKey);
@@ -178,59 +121,7 @@ void setup() {
   int flagConfigRequired = (digitalRead(pinCfg) == 0) | (strlen(SzThingSpeakChannel) == 0)  | (strlen(SzThingSpeakWriteAPIKey) == 0)  ;
 
   if ( flagConfigRequired ) {
-    WiFiManager wifiManager;
-    oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "Connect to AP");
-    oled_print_buffer(false, 0, 16, u8g2_font_t0_14_mr, "SPO2_HeartRate");
-    u8g2.sendBuffer();  
-    Serial.println("Starting configuration access point\r\n");
-    WiFiManagerParameter customThingspeakChannel("ts_channel", "ThingSpeak Channel", SzThingSpeakChannel, 10);
-    WiFiManagerParameter customThingspeakWriteAPIKey("ts_wr_api_key", "ThingSpeak Write API Key", SzThingSpeakWriteAPIKey, 20);
-    WiFiManagerParameter customThingspeakUpdateSecs("ts_update_secs", "ThingSpeak Update Seconds", SzThingSpeakUpdateSecs, 5);
-    wifiManager.setSaveConfigCallback(save_config_callback);
-    wifiManager.addParameter(&customThingspeakChannel);
-    wifiManager.addParameter(&customThingspeakWriteAPIKey);
-    wifiManager.addParameter(&customThingspeakUpdateSecs);
-   // set minimum signal strength of IAP SSIDs to show in the list.
-   // reduce this if your IAP is not displayed.
-    wifiManager.setMinimumSignalQuality(60);
-    // configuration portal times out in 90 seconds
-    wifiManager.setConfigPortalTimeout(90);
-    // on-demand configuration portal
-    if (wifiManager.startConfigPortal("SPO2_HeartRate", "")) {
-      // configuration successful, now connected to Internet Access Point in station mode  
-      oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "Config OK");
-      oled_print_buffer(false, 0, 16, u8g2_font_t0_14_mr, "IAP %s",WiFi.SSID().c_str());
-      u8g2.sendBuffer();  
-      delay(2000);
-      FlagInternetAccess = true;
-      Serial.println("Return from Config Portal, connected as Wifi station");
-      strcpy(SzThingSpeakChannel, customThingspeakChannel.getValue());
-      strcpy(SzThingSpeakWriteAPIKey, customThingspeakWriteAPIKey.getValue());
-      strcpy(SzThingSpeakUpdateSecs, customThingspeakUpdateSecs.getValue());
-      if (FlagSaveConfig) {
-        Serial.println("Changes made, saving config.json");
-        DynamicJsonBuffer jsonBuffer;
-        JsonObject& json = jsonBuffer.createObject();
-        json["ts_channel"] = SzThingSpeakChannel;
-        json["ts_wr_api_key"] = SzThingSpeakWriteAPIKey;
-        json["ts_update_secs"] = SzThingSpeakUpdateSecs;
-        File configFile = SPIFFS.open("/config.json", "w");
-        if (!configFile) {
-          Serial.println("Failed to open config.json file for writing");
-          }
-        json.prettyPrintTo(Serial);
-        json.printTo(configFile);
-        configFile.close();
-        }
-      }    
-    else { // configuration failed       
-        FlagInternetAccess = false;
-        Serial.println("Failed to connect to Internet Access Point, and WiFi configuration timed out");
-        oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "Config portal");
-        oled_print_buffer(false, 0, 16, u8g2_font_t0_14_mr, "timed out");
-        u8g2.sendBuffer();  
-        delay(2000);
-        }
+    wifi_config();
     }
  else {
     Serial.println("Connecting in station mode with Internet Access Point SSID and password retrieved from flash");
@@ -270,29 +161,8 @@ void setup() {
   Serial.printf("ThingSpeak Channel Number = %lu\r\n", ThingSpeakChannel);
   Serial.printf("ThingSpeak Update Seconds = %lu\r\n", ThingSpeakUpdateSecs);
   
-  if (sensor.begin(Wire) == false) {
-    oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "MAX30102 connection");
-    oled_print_buffer(false, 0, 16, u8g2_font_t0_14_mr, "problem");
-    u8g2.sendBuffer();  
-    delay(3000);
-    shut_down();
-    }
-    
-  // ref Maxim AN6409, average dc value of signal should be within 0.25 to 0.75 18-bit range (max value = 262143)
-  // You should test this as per the app note depending on application : finger, forehead, earlobe etc. 
-  // It even depends on skin tone. I found that the optimum combination for my index finger was :
-  // ledBrightness=30, adcRange=2048, to get max dynamic range in the waveform, and a dc level > 100,000
-  byte ledBrightness = 30; // 0 = off,  255 = 50mA
-  byte ledMode = 2; // 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green (MAX30105 only)
-  // net sampling rate = sampleRate/sampleAverage = 25
-  int sampleRate = 100; // 50, 100, 200, 400, 800, 1000, 1600, 3200
-  byte sampleAverage = 4; // 1, 2, 4, 8, 16, 32
-  int pulseWidth = 411; // 69, 118, 215, 411
-  int adcRange = 2048; // 2048, 4096, 8192, 16384
+  sensor_init();
   
-  sensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange); 
-  sensor.getINT1(); // clear the status registers by reading
-  sensor.getINT2();
   NumSamples = 0;
   CircBufferIndex = 0;
   if (FlagInternetAccess) {
@@ -307,7 +177,7 @@ void setup() {
   // get current time for thingspeak update  
   ThingSpeakTimeMarker = millis();
   FlagUpdate = false;
-  ticker.attach(0.02, get_sample); // we actually expect a new sample every 40mS
+  ticker.attach(0.02, read_sensor_sample); // we actually expect a new sample every 40mS
   }
 
 
@@ -364,6 +234,32 @@ void loop() {
   }
  
   
+void sensor_init() {
+  if (sensor.begin(Wire) == false) {
+    oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "MAX30102 connection");
+    oled_print_buffer(false, 0, 16, u8g2_font_t0_14_mr, "problem");
+    u8g2.sendBuffer();  
+    delay(3000);
+    shut_down();
+    }
+    
+  // ref Maxim AN6409, average dc value of signal should be within 0.25 to 0.75 18-bit range (max value = 262143)
+  // You should test this as per the app note depending on application : finger, forehead, earlobe etc. 
+  // It even depends on skin tone. I found that the optimum combination for my index finger was :
+  // ledBrightness=30, adcRange=2048, to get max dynamic range in the waveform, and a dc level > 100,000
+  byte ledBrightness = 30; // 0 = off,  255 = 50mA
+  byte ledMode = 2; // 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green (MAX30105 only)
+  // net sampling rate = sampleRate/sampleAverage = 25
+  int sampleRate = 100; // 50, 100, 200, 400, 800, 1000, 1600, 3200
+  byte sampleAverage = 4; // 1, 2, 4, 8, 16, 32
+  int pulseWidth = 411; // 69, 118, 215, 411
+  int adcRange = 2048; // 2048, 4096, 8192, 16384
+  
+  sensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange); 
+  sensor.getINT1(); // clear the status registers by reading
+  sensor.getINT2();
+  }
+    
 
 // turn on Wifi only for the duration of the ThingSpeak connection 
 // current draw with OLED display and WiFi on = ~75mA
@@ -421,33 +317,7 @@ void shut_down(void) {
   }
 
 
-
-// credit https://arduino.stackexchange.com/questions/43376/can-the-wifi-on-esp8266-be-disabled
-
-void wifi_on() {
-  wifi_fpm_do_wakeup();
-  wifi_fpm_close();
-  //Serial.println("Reconnecting");
-  wifi_set_opmode(STATION_MODE);
-  wifi_station_connect();
-  }
-
-#define FPM_SLEEP_MAX_TIME 0xFFFFFFF
-
-void wifi_off() {  
-  wifi_station_disconnect();
-  wifi_set_opmode(NULL_MODE);
-  wifi_set_sleep_type(MODEM_SLEEP_T);
-  wifi_fpm_open();
-  wifi_fpm_do_sleep(FPM_SLEEP_MAX_TIME);  
-  }
-    
-void save_config_callback () {
-  Serial.println("Parameters were modified, need to save config.json");
-  FlagSaveConfig = true;
-  }
-
-void get_sample(){
+void read_sensor_sample(){
   sensor.check();
   if (sensor.available())   {
       RedCircBuffer[CircBufferIndex] = sensor.getFIFORed(); 
@@ -465,59 +335,3 @@ void get_sample(){
       }
   }
 
-// clear screen buffer, use large font to print SPO2 and 
-// HeartRate and send to display
-void oled_display_data(char* format, ...) {  
-  char sz[10];
-  va_list args;
-  va_start(args, format);
-  vsprintf(sz, format, args);
-  va_end(args);
-  u8g2.setFont(u8g2_font_logisoso24_tr);
-  u8g2.clearBuffer();  
-  u8g2.drawStr(14,0,sz);
-
-  // battery status
-  u8g2.drawLine(2,0,4,0);
-  u8g2.drawFrame(0,1,8,16);
-  if (BatteryVoltage >= 4.0f)
-    u8g2.drawBox(2,3,4,12);
-  else
-  if (BatteryVoltage >= 3.9f)
-    u8g2.drawBox(2,5,4,10);
-  else
-  if (BatteryVoltage >= 3.7f)
-    u8g2.drawBox(2,7,4,8);
-  else
-  if (BatteryVoltage >= 3.6f)
-    u8g2.drawBox(2,9,4,6);
-  else 
-  if (BatteryVoltage >= 3.5f)
-    u8g2.drawBox(2,12,4,3);
-
-  // internet access
-  if (FlagInternetAccess) {
-    u8g2.drawCircle(0,31,8, U8G2_DRAW_UPPER_RIGHT);
-    u8g2.drawCircle(0,31,5, U8G2_DRAW_UPPER_RIGHT);
-    u8g2.drawDisc(0,31,2, U8G2_DRAW_UPPER_RIGHT);
-    }
-
-  u8g2.sendBuffer(); 
-
-  }
-
-
-// For printing information and status to the buffer
-// Use .sendBuffer() after finished to display 
-void oled_print_buffer(bool clearBuf, int x, int y, const uint8_t* font, char* format, ...) {  
-  char sz[20];
-  va_list args;
-  va_start(args, format);
-  vsprintf(sz, format, args);
-  va_end(args);
-  u8g2.setFont(font);
-  if (clearBuf) {
-    u8g2.clearBuffer(); 
-    }
-  u8g2.drawStr(x,y,sz);
-  }  

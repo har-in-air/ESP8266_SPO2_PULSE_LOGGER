@@ -1,15 +1,18 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-// config button pin for on-demand Configuration portal
-#define pinCfg         0 
+extern bool FlagInternetAccess;
+ 
+extern char SzThingSpeakChannel[];
+extern char SzThingSpeakWriteAPIKey[];
+extern char SzThingSpeakUpdateSecs[];
 
-// pmos transistor switched power for OLED display
-// drive low to turn on
-#define pinOLEDPwr    13
+extern unsigned long ThingSpeakChannel;
+extern unsigned long ThingSpeakUpdateSecs;
 
-// If pulse not detected in one minute, unit goes to sleep to save power
-#define SENSOR_TIMEOUT_CYCLES 60
-
+void load_config_data();
+void wifi_config();
+void wifi_on();
+void wifi_off();
 
 #endif
