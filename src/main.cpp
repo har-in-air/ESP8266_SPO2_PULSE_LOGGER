@@ -54,20 +54,16 @@ WiFiClient  client;
 // drive low to turn on
 #define pinOLEDPwr    13
 
-int     CircBufferIndex = 0;
-uint32_t  IRCircBuffer[RFA_BUFFER_SIZE]; //circular infrared LED sensor data
-uint32_t  RedCircBuffer[RFA_BUFFER_SIZE];  //circular red LED sensor data
+int     CircBufferIndex = 0; // pointer to oldest data in circular buffer
+uint32_t  IRCircBuffer[RFA_BUFFER_SIZE]; //circular infrared LED sensor data buffer
+uint32_t  RedCircBuffer[RFA_BUFFER_SIZE];  //circular red LED sensor data buffer
 
-
-//uint32_t  IRBuffer[RFA_BUFFER_SIZE]; //infrared LED sensor data
-//uint32_t  RedBuffer[RFA_BUFFER_SIZE];  //red LED sensor data
 int32_t   HeartRate; 
 float     SPO2;
 int       NumSamples;
 
 // If pulse not detected in one minute, unit goes to sleep to save power
-// (each cycle is 5 seconds of sampling)
-#define SENSOR_TIMEOUT_CYCLES 12
+#define SENSOR_TIMEOUT_CYCLES 60
 int SensorWatchdogCounter = 0;
 
 // if unable to publish data to ThingSpeak with 3 attempts, go to sleep
@@ -411,8 +407,8 @@ void loop() {
         if (flagHRValid && flagSPO2Valid) {
           SensorWatchdogCounter = 0; // got good data from sensor, feed the watchdog
           // apply damping IIR filter to SPO2 and heart-rate readings
-          SPO2_iir = SPO2_iir > 0.1f ? 0.8f * SPO2_iir + 0.2f * SPO2 : SPO2;
-          HeartRate_iir = HeartRate_iir > 0.1f ?  0.8f * HeartRate_iir + 0.2f * (float)HeartRate : (float)HeartRate;
+          SPO2_iir = SPO2_iir > 0.1f ? 0.9f * SPO2_iir + 0.1f * SPO2 : SPO2;
+          HeartRate_iir = HeartRate_iir > 0.1f ?  0.9f * HeartRate_iir + 0.1f * (float)HeartRate : (float)HeartRate;
           oled_displayData("%2d%% %3d", SPO2_iir >= 99.0f ? 99 : (int)(SPO2_iir+0.5f), (int)(HeartRate_iir+0.5f));
           }
         else {
