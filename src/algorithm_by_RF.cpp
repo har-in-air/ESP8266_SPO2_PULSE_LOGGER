@@ -34,7 +34,7 @@
 #include "algorithm_by_RF.h"
 #include <math.h>
 
-void rf_heart_rate_and_oxygen_saturation(uint32_t *pun_ir_buffer, int32_t n_ir_buffer_length, uint32_t *pun_red_buffer, float *pn_spo2, int8_t *pch_spo2_valid, 
+void rf_heart_rate_and_oxygen_saturation(int32_t circ_buffer_index, uint32_t *pun_ir_buffer, int32_t n_ir_buffer_length, uint32_t *pun_red_buffer, float *pn_spo2, int8_t *pch_spo2_valid, 
                 int32_t *pn_heart_rate, int8_t *pch_hr_valid, float *ratio, float *correl)
 /**
 * \brief        Calculate the heart rate and SpO2 level, Robert Fraczkiewicz version
@@ -53,7 +53,7 @@ void rf_heart_rate_and_oxygen_saturation(uint32_t *pun_ir_buffer, int32_t n_ir_b
 */
 {
   int32_t k;  
-  static int32_t n_last_peak_interval=LOWEST_PERIOD;
+  static int32_t n_last_peak_interval = LOWEST_PERIOD;
   float f_ir_mean,f_red_mean,f_ir_sumsq,f_red_sumsq;
   float f_y_ac, f_x_ac, xy_ratio;
   float beta_ir, beta_red, x;
@@ -61,20 +61,28 @@ void rf_heart_rate_and_oxygen_saturation(uint32_t *pun_ir_buffer, int32_t n_ir_b
   float an_y[RFA_BUFFER_SIZE], *ptr_y; //red
 
   // calculates DC mean and subtracts DC from ir and red
-  f_ir_mean=0.0; 
-  f_red_mean=0.0;
-  for (k=0; k<n_ir_buffer_length; ++k) {
+  // Here it doesn't matter that we are dealing with a circular buffer
+  f_ir_mean = 0.0; 
+  f_red_mean = 0.0;
+  for (k = 0; k < n_ir_buffer_length; ++k) {
     f_ir_mean += pun_ir_buffer[k];
     f_red_mean += pun_red_buffer[k];
-  }
-  f_ir_mean=f_ir_mean/n_ir_buffer_length ;
-  f_red_mean=f_red_mean/n_ir_buffer_length ;
+    }
+  f_ir_mean = f_ir_mean/n_ir_buffer_length ;
+  f_red_mean = f_red_mean/n_ir_buffer_length ;
   
-  // remove DC 
-  for (k=0,ptr_x=an_x,ptr_y=an_y; k<n_ir_buffer_length; ++k,++ptr_x,++ptr_y) {
-    *ptr_x = pun_ir_buffer[k] - f_ir_mean;
-    *ptr_y = pun_red_buffer[k] - f_red_mean;
-  }
+  // remove DC.
+  // Here we use the current circular buffer index (oldest sample) and loop around the entire buffer
+  int buf_inx = circ_buffer_index;
+  int count = n_ir_buffer_length;
+  ptr_x = an_x;
+  ptr_y = an_y;
+  while (count--) {
+    *ptr_x++ = pun_ir_buffer[buf_inx] - f_ir_mean;
+    *ptr_y++ = pun_red_buffer[buf_inx] - f_red_mean;
+    buf_inx++;
+    if (buf_inx >= RFA_BUFFER_SIZE) buf_inx = 0;
+    }
 
   // RF, remove linear trend (baseline leveling)
   beta_ir = rf_linear_regression_beta(an_x, mean_X, sum_X2);

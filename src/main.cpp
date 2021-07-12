@@ -54,9 +54,13 @@ WiFiClient  client;
 // drive low to turn on
 #define pinOLEDPwr    13
 
+int     CircBufferIndex = 0;
+uint32_t  IRCircBuffer[RFA_BUFFER_SIZE]; //circular infrared LED sensor data
+uint32_t  RedCircBuffer[RFA_BUFFER_SIZE];  //circular red LED sensor data
 
-uint32_t  IRBuffer[RFA_BUFFER_SIZE]; //infrared LED sensor data
-uint32_t  RedBuffer[RFA_BUFFER_SIZE];  //red LED sensor data
+
+//uint32_t  IRBuffer[RFA_BUFFER_SIZE]; //infrared LED sensor data
+//uint32_t  RedBuffer[RFA_BUFFER_SIZE];  //red LED sensor data
 int32_t   HeartRate; 
 float     SPO2;
 int       NumSamples;
@@ -95,6 +99,16 @@ bool FlagSaveConfig = false;
 
 // ThingSpeak update interval marker
 unsigned long ThingSpeakTimeMarker;
+
+void saveConfigCallback();
+void oled_displayData(char* format, ...);
+void oled_printBuf(bool clearBuf, int x, int y, const uint8_t* font, char* format, ...);
+float battery_SampleVoltage(void);
+void shutDown(void);  
+void WiFiOn();
+void WiFiOff();  
+void updateThingSpeak(float spo2, float heartRate, float BatteryVoltage);
+
 
 void saveConfigCallback () {
   Serial.println("Parameters were modified, need to save config.json");
@@ -139,7 +153,9 @@ void oled_displayData(char* format, ...) {
     }
 
   u8g2.sendBuffer(); 
+
   }
+
 
 // For printing information and status to the buffer
 // Use .sendBuffer() after finished to display 
@@ -348,6 +364,7 @@ void setup() {
   sensor.getINT1(); // clear the status registers by reading
   sensor.getINT2();
   NumSamples = 0;
+  CircBufferIndex = 0;
   if (FlagInternetAccess) {
     Serial.println("Starting loop with InternetAccess");
     ThingSpeak.begin(client); 
@@ -371,13 +388,16 @@ void loop() {
 
   sensor.check();
   while (sensor.available())   {
-      RedBuffer[NumSamples] = sensor.getFIFORed(); 
-      IRBuffer[NumSamples] = sensor.getFIFOIR();
+      RedCircBuffer[CircBufferIndex] = sensor.getFIFORed(); 
+      IRCircBuffer[CircBufferIndex] = sensor.getFIFOIR();
+      CircBufferIndex++;
+      if (CircBufferIndex >= RFA_BUFFER_SIZE) CircBufferIndex = 0;  
       NumSamples++;
-      sensor.nextSample(); 
-      if (NumSamples == RFA_BUFFER_SIZE) {
-        // calculate heart rate and SpO2 using RF algorithm, after RFA_BUFFER_SIZE samples are read
-        rf_heart_rate_and_oxygen_saturation(IRBuffer, RFA_BUFFER_SIZE, RedBuffer, &SPO2, &flagSPO2Valid, &HeartRate, &flagHRValid, &ratio, &correl);     
+      sensor.nextSample();
+      // Recompute every second with the last 5 seconds of samples (sliding window)
+      // CircBufferIndex points to the oldest sample in the buffer
+      if (NumSamples == FS) {
+        rf_heart_rate_and_oxygen_saturation(CircBufferIndex,IRCircBuffer, RFA_BUFFER_SIZE, RedCircBuffer, &SPO2, &flagSPO2Valid, &HeartRate, &flagHRValid, &ratio, &correl);     
         NumSamples = 0;
 		    // periodically check the battery voltage  
         BatteryVoltage = battery_SampleVoltage();
@@ -391,8 +411,8 @@ void loop() {
         if (flagHRValid && flagSPO2Valid) {
           SensorWatchdogCounter = 0; // got good data from sensor, feed the watchdog
           // apply damping IIR filter to SPO2 and heart-rate readings
-          SPO2_iir = SPO2_iir > 0.1f ? 0.6f * SPO2_iir + 0.4f * SPO2 : SPO2;
-          HeartRate_iir = HeartRate_iir > 0.1f ?  0.6f * HeartRate_iir + 0.4f * (float)HeartRate : (float)HeartRate;
+          SPO2_iir = SPO2_iir > 0.1f ? 0.8f * SPO2_iir + 0.2f * SPO2 : SPO2;
+          HeartRate_iir = HeartRate_iir > 0.1f ?  0.8f * HeartRate_iir + 0.2f * (float)HeartRate : (float)HeartRate;
           oled_displayData("%2d%% %3d", SPO2_iir >= 99.0f ? 99 : (int)(SPO2_iir+0.5f), (int)(HeartRate_iir+0.5f));
           }
         else {
@@ -454,6 +474,7 @@ void updateThingSpeak(float spo2, float heartRate, float BatteryVoltage) {
   }
 
 
+
 float battery_SampleVoltage(void) {
   int adcSample = 0;
   for (int inx = 0; inx < 4; inx++) {
@@ -478,7 +499,8 @@ void shutDown(void) {
   ESP.deepSleep(0); // can only be woken up by reset/power cycle                      
   }
 
-  
+
+
 // credit https://arduino.stackexchange.com/questions/43376/can-the-wifi-on-esp8266-be-disabled
 
 void WiFiOn() {
