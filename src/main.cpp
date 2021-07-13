@@ -44,7 +44,9 @@ extern "C" {
 // drive low to turn on
 #define pinOLEDPwr    13
 // If pulse not detected in one minute, unit goes to sleep to save power
-#define SENSOR_TIMEOUT_CYCLES 60
+#define SENSOR_TIMEOUT_CYCLES  (60*FS)
+// First order IIR damping filter coefficient
+#define IIR_COEFF      0.95f
 
 MAX30105 sensor;// this library works for MAX30102 as well
 WiFiClient  client;
@@ -64,14 +66,11 @@ float HeartRate_iir = 0.0f;
 
 // If pulse not detected in one minute, unit goes to sleep to save power
 int SensorWatchdogCounter = 0;
-
 // if unable to publish data to ThingSpeak with 3 consecutive attempts, 
 // stop trying and disable wifi to save power
 int ThingSpeakWatchdogCounter = 0;
-
-float BatteryVoltage;
-
 unsigned long ThingSpeakTimeMarker;// ThingSpeak update interval marker
+float BatteryVoltage;
 
 float battery_sample_voltage(void);
 void shut_down(void);  
@@ -163,8 +162,6 @@ void setup() {
   
   sensor_init();
   
-  NumSamples = 0;
-  CircBufferIndex = 0;
   if (FlagInternetAccess) {
     Serial.println("Starting loop with InternetAccess");
     ThingSpeak.begin(client); 
@@ -176,38 +173,24 @@ void setup() {
     }
   // get current time for thingspeak update  
   ThingSpeakTimeMarker = millis();
+  NumSamples = 0;
+  CircBufferIndex = 0;
   FlagUpdate = false;
-  ticker.attach(0.02, read_sensor_sample); // we actually expect a new sample every 40mS
+  ticker.attach(0.02, read_sensor_sample); // new sample expected every ~40mS
   }
 
 
-
-
 void loop() {
-  float ratio,correl; 
-  int8_t  flagSPO2Valid = 0;  
-  int8_t  flagHRValid  = 0;  
+  bool flagSPO2Valid, flagHRValid;
 
   if (FlagUpdate == true) {
     FlagUpdate = false;
-    rf_heart_rate_and_oxygen_saturation(CircBufferIndex,IRCircBuffer, RFA_BUFFER_SIZE, RedCircBuffer, &SPO2, &flagSPO2Valid, &HeartRate, &flagHRValid, &ratio, &correl);     
-    // periodically check the battery voltage  
-    BatteryVoltage = battery_sample_voltage();
-    if (BatteryVoltage < 3.3f) {
-      oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "Low Battery Voltage");
-      u8g2.sendBuffer();  
-      delay(3000);
-      shut_down();
-      }
+    NumSamples++;
+    flagSPO2Valid = false;
+    flagHRValid  = false;
+    rf_heart_rate_and_oxygen_saturation(CircBufferIndex,IRCircBuffer, RFA_BUFFER_SIZE, RedCircBuffer, &SPO2, &flagSPO2Valid, &HeartRate, &flagHRValid);     
 
-    if (flagHRValid && flagSPO2Valid) {
-      SensorWatchdogCounter = 0; // got good data from sensor, feed the watchdog
-      // apply damping IIR filter to SPO2 and heart-rate readings
-      SPO2_iir = SPO2_iir > 0.1f ? 0.9f * SPO2_iir + 0.1f * SPO2 : SPO2;
-      HeartRate_iir = HeartRate_iir > 0.1f ?  0.9f * HeartRate_iir + 0.1f * (float)HeartRate : (float)HeartRate;
-      oled_display_data("%2d%% %3d", SPO2_iir >= 99.0f ? 99 : (int)(SPO2_iir+0.5f), (int)(HeartRate_iir+0.5f));
-      }
-    else {
+    if ((flagHRValid == false) && (flagSPO2Valid == false)){
       SensorWatchdogCounter++;
       if (SensorWatchdogCounter >= SENSOR_TIMEOUT_CYCLES) {
         oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "No SPO2/Pulse data");
@@ -216,13 +199,37 @@ void loop() {
         delay(3000);
         shut_down();
         }
-      else {     
+      else {
        	// blank display if spo2/heart-rate could not be computed from the data
         oled_display_data("        ");
         }
-      } 
-    Serial.printf("%c SP02_IIR %.2f, Pulse_IIR %.0f\r\n", flagSPO2Valid && flagHRValid ? ' ' : 'x', SPO2_iir, HeartRate_iir);
-            
+      }
+    else {
+      SensorWatchdogCounter = 0; // got good data from sensor, feed the watchdog
+      if (flagHRValid == true) {
+        // apply damping IIR filter 
+        HeartRate_iir = HeartRate_iir > 0.1f ?  (IIR_COEFF * HeartRate_iir) + ((1.0f - IIR_COEFF) * (float)HeartRate) : (float)HeartRate;
+        }
+      if (flagSPO2Valid == true) {
+        // apply damping IIR filter 
+        SPO2_iir = SPO2_iir > 0.1f ? (IIR_COEFF * SPO2_iir) + ((1.0f - IIR_COEFF) * SPO2) : SPO2;
+        }
+      // Update display every second 
+      if (NumSamples >= FS) {
+        NumSamples = 0;
+        // check the battery voltage  
+        BatteryVoltage = battery_sample_voltage();
+        if (BatteryVoltage < 3.3f) {
+          oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "Low Battery Voltage");
+          u8g2.sendBuffer();  
+          delay(3000);
+          shut_down();
+          }
+        oled_display_data("%2d%% %3d", SPO2_iir >= 99.0f ? 99 : (int)(SPO2_iir+0.5f), (int)(HeartRate_iir+0.5f));
+        Serial.printf("%c SP02_IIR %.2f, %c Pulse_IIR %.0f\r\n", flagSPO2Valid ? ' ' : 'x', SPO2_iir, flagHRValid ? ' ' : 'x',HeartRate_iir);
+        }
+      }
+
     if (FlagInternetAccess) {
       if ((millis() - ThingSpeakTimeMarker) >  (ThingSpeakUpdateSecs*1000)){ 
         ThingSpeakTimeMarker = millis();
@@ -230,12 +237,12 @@ void loop() {
         update_thingspeak(SPO2_iir, HeartRate_iir, BatteryVoltage);
         }
       }
-    }        
+    } 
   }
  
   
 void sensor_init() {
-  if (sensor.begin(Wire) == false) {
+  if (sensor.begin(Wire, I2C_SPEED_FAST) == false) {
     oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "MAX30102 connection");
     oled_print_buffer(false, 0, 16, u8g2_font_t0_14_mr, "problem");
     u8g2.sendBuffer();  
@@ -324,14 +331,8 @@ void read_sensor_sample(){
       IRCircBuffer[CircBufferIndex] = sensor.getFIFOIR();
       CircBufferIndex++;
       if (CircBufferIndex >= RFA_BUFFER_SIZE) CircBufferIndex = 0;  
-      NumSamples++;
       sensor.nextSample();
-      // Recompute every second with the last 5 seconds of samples (sliding window)
-      // CircBufferIndex points to the oldest sample in the buffer
-      if (NumSamples == FS) {
-        FlagUpdate = true;
-        NumSamples = 0;
-        }
+      FlagUpdate = true;
       }
   }
 

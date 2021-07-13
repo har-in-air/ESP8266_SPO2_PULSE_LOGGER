@@ -34,8 +34,8 @@
 #include "algorithm_by_RF.h"
 #include <math.h>
 
-void rf_heart_rate_and_oxygen_saturation(int32_t circ_buffer_index, uint32_t *pun_ir_buffer, int32_t n_ir_buffer_length, uint32_t *pun_red_buffer, float *pn_spo2, int8_t *pch_spo2_valid, 
-                int32_t *pn_heart_rate, int8_t *pch_hr_valid, float *ratio, float *correl)
+void rf_heart_rate_and_oxygen_saturation(int32_t circ_buffer_index, uint32_t *pun_ir_buffer, int32_t n_ir_buffer_length, uint32_t *pun_red_buffer, float *pn_spo2, bool *pspo2_valid, 
+                int32_t *pn_heart_rate, bool *phr_valid)
 /**
 * \brief        Calculate the heart rate and SpO2 level, Robert Fraczkiewicz version
 * \par          Details
@@ -45,14 +45,15 @@ void rf_heart_rate_and_oxygen_saturation(int32_t circ_buffer_index, uint32_t *pu
 * \param[in]    n_ir_buffer_length      - IR sensor data buffer length
 * \param[in]    *pun_red_buffer          - Red sensor data buffer
 * \param[out]    *pn_spo2                - Calculated SpO2 value
-* \param[out]    *pch_spo2_valid         - 1 if the calculated SpO2 value is valid
+* \param[out]    *pspo2_valid         - true if the calculated SpO2 value is valid
 * \param[out]    *pn_heart_rate          - Calculated heart rate value
-* \param[out]    *pch_hr_valid           - 1 if the calculated heart rate value is valid
+* \param[out]    *phr_valid           - true if the calculated heart rate value is valid
 *
 * \retval       None
 */
 {
   int32_t k;  
+  float ratio, correl;
   static int32_t n_last_peak_interval = LOWEST_PERIOD;
   float f_ir_mean,f_red_mean,f_ir_sumsq,f_red_sumsq;
   float f_y_ac, f_x_ac, xy_ratio;
@@ -97,29 +98,29 @@ void rf_heart_rate_and_oxygen_saturation(int32_t circ_buffer_index, uint32_t *pu
   f_x_ac=rf_rms(an_x,n_ir_buffer_length,&f_ir_sumsq);
 
   // Calculate Pearson correlation between red and IR
-  *correl=rf_Pcorrelation(an_x, an_y, n_ir_buffer_length)/sqrt(f_red_sumsq*f_ir_sumsq);
+  correl = rf_Pcorrelation(an_x, an_y, n_ir_buffer_length)/sqrt(f_red_sumsq*f_ir_sumsq);
 
   // Find signal periodicity
-  if(*correl>=min_pearson_correlation) {
+  if(correl >= min_pearson_correlation) {
     // At the beginning of oximetry run the exact range of heart rate is unknown. This may lead to wrong rate if the next call does not find the _first_
     // peak of the autocorrelation function. E.g., second peak would yield only 50% of the true rate. 
     if(LOWEST_PERIOD==n_last_peak_interval) 
       rf_initialize_periodicity_search(an_x, RFA_BUFFER_SIZE, &n_last_peak_interval, HIGHEST_PERIOD, min_autocorrelation_ratio, f_ir_sumsq);
     // RF, If correlation os good, then find average periodicity of the IR signal. If aperiodic, return periodicity of 0
     if(n_last_peak_interval!=0)
-      rf_signal_periodicity(an_x, RFA_BUFFER_SIZE, &n_last_peak_interval, LOWEST_PERIOD, HIGHEST_PERIOD, min_autocorrelation_ratio, f_ir_sumsq, ratio);
+      rf_signal_periodicity(an_x, RFA_BUFFER_SIZE, &n_last_peak_interval, LOWEST_PERIOD, HIGHEST_PERIOD, min_autocorrelation_ratio, f_ir_sumsq, &ratio);
   } else n_last_peak_interval=0;
 
   // Calculate heart rate if periodicity detector was successful. Otherwise, reset peak interval to its initial value and report error.
   if(n_last_peak_interval!=0) {
     *pn_heart_rate = (int32_t)(FS60/n_last_peak_interval);
-    *pch_hr_valid  = 1;
+    *phr_valid  = true;
   } else {
     n_last_peak_interval=LOWEST_PERIOD;
     *pn_heart_rate = -999; // unable to calculate because signal looks aperiodic
-    *pch_hr_valid  = 0;
+    *phr_valid  = false;
     *pn_spo2 =  -999 ; // do not use SPO2 from this corrupt signal
-    *pch_spo2_valid  = 0; 
+    *pspo2_valid  = false; 
     return;
   }
 
@@ -127,10 +128,10 @@ void rf_heart_rate_and_oxygen_saturation(int32_t circ_buffer_index, uint32_t *pu
   xy_ratio= (f_y_ac*f_ir_mean)/(f_x_ac*f_red_mean);  //formula is (f_y_ac*f_x_dc) / (f_x_ac*f_y_dc) ;
   if(xy_ratio>0.02 && xy_ratio<1.84) { // Check boundaries of applicability
     *pn_spo2 = (-45.060*xy_ratio + 30.354)*xy_ratio + 94.845;
-    *pch_spo2_valid = 1;
+    *pspo2_valid = true;
   } else {
     *pn_spo2 =  -999 ; // do not use SPO2 since signal an_ratio is out of range
-    *pch_spo2_valid  = 0; 
+    *pspo2_valid  = false; 
   }
 }
 

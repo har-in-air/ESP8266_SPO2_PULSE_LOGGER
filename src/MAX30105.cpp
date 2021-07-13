@@ -145,7 +145,7 @@ boolean MAX30105::begin(TwoWire &wirePort, uint32_t i2cSpeed, uint8_t i2caddr) {
 
   // Wire.begin already called by U8G2 graphics library for SSD1306 OLED Display
   //_i2cPort->begin();
-  //_i2cPort->setClock(i2cSpeed);
+  _i2cPort->setClock(i2cSpeed);
 
   _i2caddr = i2caddr;
 
