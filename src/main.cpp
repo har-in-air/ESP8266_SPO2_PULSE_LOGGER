@@ -226,7 +226,7 @@ void loop() {
           shut_down();
           }
         oled_display_data("%2d%% %3d", SPO2_iir >= 99.0f ? 99 : (int)(SPO2_iir+0.5f), (int)(HeartRate_iir+0.5f));
-        Serial.printf("%c SP02_IIR %.2f, %c Pulse_IIR %.0f\r\n", flagSPO2Valid ? ' ' : 'x', SPO2_iir, flagHRValid ? ' ' : 'x',HeartRate_iir);
+        Serial.printf("SP02_IIR %.2f, Pulse_IIR %.0f\r\n", SPO2_iir, HeartRate_iir);
         }
       }
 
