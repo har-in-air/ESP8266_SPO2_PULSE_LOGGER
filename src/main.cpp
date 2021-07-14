@@ -214,8 +214,8 @@ void loop() {
         // apply damping IIR filter 
         SPO2_iir = SPO2_iir > 0.1f ? (IIR_COEFF * SPO2_iir) + ((1.0f - IIR_COEFF) * SPO2) : SPO2;
         }
-      // Update display every second 
-      if (NumSamples >= FS) {
+      // Update display every 2 seconds 
+      if (NumSamples >= (2*FS)) {
         NumSamples = 0;
         // check the battery voltage  
         BatteryVoltage = battery_sample_voltage();
