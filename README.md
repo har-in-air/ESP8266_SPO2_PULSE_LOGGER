@@ -8,7 +8,7 @@ Filtered readings are published to your personal subscription channel on the IOT
 WiFi internet access point SSID and password, ThingSpeak credentials and publishing interval are
 configured via a webserver on a standalone WiFi Access Point. This WiFi AP is started up automatically if no SSID/password/credentials are stored. It is also available on-demand by pressing a configuration button after power-up.
 
-A 128x32 OLED display is updated every second with IIR-filtered SPO2 and heart-rate readings, battery level and WiFi internet access status. SPO2 and heart-rate readings continue to be displayed even if you have no internet access or fail to connect to your Thingspeak channel. In this case the Wifi icon will not be displayed.
+A 128x32 OLED display is updated every 2 seconds with IIR-filtered SPO2 and heart-rate readings, battery level and WiFi internet access status. SPO2 and heart-rate readings continue to be displayed even if you have no internet access or fail to connect to your Thingspeak channel. In this case the Wifi icon will not be displayed.
 
 ## Hardware
 
@@ -55,8 +55,7 @@ the Json 6 library uses a completely different API.
 
 ## RF auto-correlation algorithm versus FFT spectral analysis
 
-Robert Fraczkiewicz's libary uses an auto-correlation algorithm to compute heart-rate. I've [archived some code](RFA_versus_FFT_for_heartrate.zip) that does an 
-FFT spectral analysis of the sensor red led waveform to compute heart-rate. 
+Robert Fraczkiewicz's libary uses an auto-correlation algorithm on the sensor red led waveform to compute heart-rate. I've [archived] a project (RFA_versus_FFT_for_heartrate.zip) that uses FFT spectral analysis of the sensor red led waveform to compute heart-rate. 
 
 ## Usage
 
