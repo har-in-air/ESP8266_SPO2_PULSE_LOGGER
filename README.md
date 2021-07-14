@@ -1,17 +1,14 @@
 # ESP8266_SPO2_PULSE_LOGGER
  
-The ESP8266 collects raw sensor data from a MAX30102 
-sensor at a sample rate of 25samples/second, and computes SP02 and heart-rate (bpm) readings. The analysis and display is updated every second using a sliding window of the last 125 samples (5 seconds worth of samples). 
+The ESP8266 module reads raw sensor data from a MAX30102 
+sensor at 25 samples/second. The samples are inserted into a circular buffer containing the last 125 samples (5 seconds of readings). SP02 and heart-rate are computed 25 times per second using Robert Fraczkiewicz's procedure.
 
-A 128x32 OLED display is used to indicate SPO2 and heart-rate.
+Filtered readings are published to your personal subscription channel on the IOT website Thingspeak, with a configurable update interval. The minimum update interval is 15 seconds for a free Thingspeak subscription. You can view a 'real-time' chart of the data on your Thingspeak channel page.
 
-The readings are published (with a configurable update interval) to your 
-channel on the IOT website Thingspeak. 
-You can view a 'real-time' chart of the data on your channel page.
+WiFi internet access point SSID and password, ThingSpeak credentials and publishing interval are
+configured via a webserver on a standalone WiFi Access Point. This WiFi AP is started up automatically if no SSID/password/credentials are stored. It is also available on-demand by pressing a configuration button after power-up.
 
-Internet Access Point SSID/PW, ThingSpeak credentials and update interval are
-configured via an AP web portal that is available on-demand by pressing a
-configuration button after power-up.
+A 128x32 OLED display is updated every second with IIR-filtered SPO2 and heart-rate readings, battery level and WiFi internet access status. SPO2 and heart-rate readings continue to be displayed even if you have no internet access or fail to connect to your Thingspeak channel. In this case the Wifi icon will not be displayed.
 
 ## Hardware
 
@@ -67,32 +64,31 @@ SPIFFS partitions and Wifi settings.
 Do this if you make any changes to the SPIFFS partition, configuration file structure, or are facing problems with IAP access after configuration.
 * The ESP8266 reads a JSON configuration file in SPIFFS to retrieve the Thingspeak
 parameters (channel number, write API key and update interval). If you just used the
-"Flash Erase"option, the configuration file will not exist and the AP configuration portal will start up.
+"Flash Erase" option, the configuration file will not exist and the AP configuration portal will start up.
 Connect to the WiFi access point with SSID "SPO2_HeartRate" within 90 seconds. On my
 Ubuntu 20.04 machine, the configuration webpage automatically popped up in a separate browser window.
 If that doesn't happen, open your browser and enter the url ```http://192.168.4.1``` to access the Wifi configuration page. Here you enter the 
 Internet access point SSID/password, the Thingspeak channel number, API key and update interval (in seconds). The **minimum update interval** for a free ThingSpeak subscription is 15 seconds.
 Save the settings. The ThingSpeak parameters will now be saved to a JSON configuration file
-in SPIFFS. The IAP SSID and password are saved in the Wifi settings flash area.
+in the SPIFFS flash partition. The Internet Access Point SSID and password are saved in the Wifi settings flash area.
 
-### Portal home page
+### AP Webserver home page
 
 <img src="docs/ConfigPortal1.png" />
 
-### Portal configuration page (with flash completely erased)
+### Webserver configuration page (with flash completely erased)
 
 <img src="docs/ConfigPortal2.png" />
 
 * If you want to change the Internet Access point configuration SSID/PW or Thingspeak
-credentials, start the AP portal by pressing the configuration button
-when you see the display prompt, just after power-up. Keep it pressed until you
-see confirmation of the portal startup.
-Now connect to the portal and make your changes.
+credentials, wait for the display prompt just after start-up. Press the configuration button
+and keep it pressed until you see display confirmation of the AP webserver startup.
+Now connect to the webserver configuration page and make your changes.
 
 
 <img src="docs/screenshot.png"/>
 
-* Battery and WiFi status are shown in the left side of the display. If the unit cannot
+* Battery level and WiFi status are shown on the left side of the display. If the unit cannot
 connect to the last configured IAP, or cannot connect to ThingSpeak with 3 consecutive attempts, 
 the Wifi radio is turned off and no WiFi icon will be displayed.
 
