@@ -24,26 +24,27 @@ Here's the [circuit schematic](docs/sp02_pulse_logger_schematic.pdf).
 
 I used a clothes peg with some silicone putty to make a mold for my index finger. 
 Note that if blood circulation
-is restricted, you won't be able to get any readings. I replaced the original clothes peg spring to reduce the force to the point where it was just enough to allow a snug fit. 
+is restricted, you won't be able to get any readings. I replaced the original clothes peg spring with one made from a thin hacksaw wire blade. This reduced the closing force so it was just enough for a snug fit without slipping off. 
 
 <img src="docs/prototype_hardware_2.jpg" />
 
 ## Software Development Environment
-* Ubuntu 20.04
-* Visual Studio Code + Platformio plugin using Arduino framework for Espressif ESP8285 board
+
+* Ubuntu 20.04 on AMDx64
+* Visual Studio Code + Platformio plugin using Espressif Arduino framework for ESP8285 platform
 
 <img src="docs/vsc_screenshot_build.png">
 
 ## Library Usage Notes
 
-* MAX30102 sensor initialization and FIFO readout code from 
+* MAX30102 sensor initialization and FIFO readout code 
 [Sparkfun](https://github.com/sparkfun/SparkFun_MAX3010x_Sensor_Library)
 
-* SPO2 & pulse rate measurement code by Robert Fraczkiewicz from 
+* SPO2 & pulse rate measurement code by Robert Fraczkiewicz
 [aromring's repository](https://github.com/aromring/MAX30102_by_RF). 
 I modified the implementation to use a circular buffer with 125 samples
 
-* WiFiManager SSID/password and ThingSpeak configuration magic by [tzapu](https://github.com/tzapu/WiFiManager)
+* WiFiManager SSID/password and ThingSpeak configuration magic [tzapu](https://github.com/tzapu/WiFiManager)
 
 * [Arduino Json 5 library](https://github.com/bblanchon/ArduinoJson/tree/5.x). Note that
 the Json 6 library uses a completely different API.
@@ -52,10 +53,10 @@ the Json 6 library uses a completely different API.
 
 * [ThingSpeak Arduino library](https://github.com/mathworks/thingspeak-arduino)
 
-## RF auto-correlation algorithm versus FFT spectral analysis - a diversion
+## RF auto-correlation algorithm versus FFT spectral analysis
 
-I've [archived some code](RFA_versus_FFT_for_heartrate.zip) that does an 
-FFT spectral analysis of the sensor red led waveform to determine the heart-rate. 
+Robert Fraczkiewicz's libary uses an auto-correlation algorithm to compute heart-rate. I've [archived some code](RFA_versus_FFT_for_heartrate.zip) that does an 
+FFT spectral analysis of the sensor red led waveform to compute heart-rate. 
 
 ## Usage
 
