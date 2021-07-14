@@ -31,7 +31,7 @@ is restricted, you won't be able to get any readings. I replaced the original cl
 ## Software Development Environment
 
 * Ubuntu 20.04 on AMDx64
-* Visual Studio Code + Platformio plugin using Espressif Arduino framework for ESP8285 platform
+* Visual Studio Code + Platformio plugin using Espressif Arduino framework for ESP8285 platform. Previous versions used the Arduino IDE environment - the last Arduino IDE compatible source code is tagged as v0.9.
 
 <img src="docs/vsc_screenshot_build.png">
 
