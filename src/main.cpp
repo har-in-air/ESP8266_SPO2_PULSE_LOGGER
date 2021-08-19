@@ -31,6 +31,7 @@
 #include "config.h"
 #include "algorithm_by_RF.h"
 #include "MAX30105.h"
+#include "kalmanfilter.h"
 #include "oled.h"
 #include "config.h"
 
@@ -46,15 +47,27 @@ extern "C" {
 // If pulse not detected in one minute, unit goes to sleep to save power
 #define SENSOR_TIMEOUT_CYCLES  (60*FS)
 // First order IIR damping filter coefficient
-#define IIR_COEFF      0.95f
+#define IIR_COEFF      0.98f
+
+#ifdef USE_KF
+#define RED_NOISE_VARIANCE 150.0f
+#define IR_NOISE_VARIANCE  150.0f
+
+#define RED_MEAN          175000.0f
+#define IR_MEAN           215000.0f
+#define RED_SIGNAL_VARIANCE 20000.0f
+#define IR_SIGNAL_VARIANCE  50000.0f
+#endif
 
 MAX30105 sensor;// this library works for MAX30102 as well
 WiFiClient  client;
 Ticker ticker;
+KalmanFilter kfRed;
+KalmanFilter kfIR;
 
-int       CircBufferIndex = 0; // pointer to oldest data in circular buffer
-uint32_t  IRCircBuffer[RFA_BUFFER_SIZE]; //circular infrared LED sensor data buffer
-uint32_t  RedCircBuffer[RFA_BUFFER_SIZE];  //circular red LED sensor data buffer
+int    CircBufferIndex = 0; // pointer to oldest data in circular buffer
+float  IRCircBuffer[RFA_BUFFER_SIZE]; //circular infrared LED sensor data buffer
+float  RedCircBuffer[RFA_BUFFER_SIZE];  //circular red LED sensor data buffer
 
 int32_t   HeartRate; 
 float     SPO2;
@@ -69,15 +82,17 @@ int SensorWatchdogCounter = 0;
 // if unable to publish data to ThingSpeak with 3 consecutive attempts, 
 // stop trying and disable wifi to save power
 int ThingSpeakWatchdogCounter = 0;
-unsigned long ThingSpeakTimeMarker;// ThingSpeak update interval marker
+uint32_t ThingSpeakTimeMarker;// ThingSpeak update interval marker
 float BatteryVoltage;
 
-float battery_sample_voltage(void);
-void shut_down(void);  
-void update_thingspeak(float spo2, float heartRate, float BatteryVoltage);
-void read_sensor_sample();
-void sensor_init();
-
+static float battery_sample_voltage(void);
+static void shut_down(void);  
+static void update_thingspeak(float spo2, float heartRate, float BatteryVoltage);
+static void read_sensor_sample();
+static void sensor_init();
+#ifdef USE_KF
+static void measure_mean_variance(float sampleBuf[], int numSamples, float* pMean, float* pVariance);
+#endif
 
 void setup() {
   Serial.begin(115200);
@@ -95,14 +110,14 @@ void setup() {
   //u8g2.setFontDirection(0);
   oled_display_data("SPO2 HR");
   delay(2000);
-    
+  pinMode(pinCfg, INPUT);
+
   // retrieve wifi and thingspeak configuration data from json file in SPIFFS
   load_config_data();
 
   Serial.printf("ThingSpeak Channel = %s\r\n", SzThingSpeakChannel);
   Serial.printf("ThingSpeak Write API Key = %s\r\n", SzThingSpeakWriteAPIKey);
   Serial.printf("ThingSpeak Update Seconds = %s\r\n", SzThingSpeakUpdateSecs);
-  pinMode(pinCfg, INPUT);
 
   // If you want to change Internet Access Point SSID/Password, or ThingSpeak credentials : 
   // When you see the prompt, press the config button and keep it pressed until 
@@ -161,7 +176,7 @@ void setup() {
   Serial.printf("ThingSpeak Update Seconds = %lu\r\n", ThingSpeakUpdateSecs);
   
   sensor_init();
-  
+
   if (FlagInternetAccess) {
     Serial.println("Starting loop with InternetAccess");
     ThingSpeak.begin(client); 
@@ -176,9 +191,33 @@ void setup() {
   NumSamples = 0;
   CircBufferIndex = 0;
   FlagUpdate = false;
-  ticker.attach(0.02, read_sensor_sample); // new sample expected every ~40mS
+#ifdef USE_KF  
+  kfRed.configure(RED_NOISE_VARIANCE, RED_SIGNAL_VARIANCE, RED_MEAN, 0.0f);  
+  kfIR.configure(IR_NOISE_VARIANCE, IR_SIGNAL_VARIANCE, IR_MEAN, 0.0f);  
+#endif
+  ticker.attach(0.02, read_sensor_sample); // new sample expected every ~40mS  
   }
 
+
+#if 0
+// used only for measuring the variance of the red and iir signal, which is needed to optimally configure the kalman filter
+void loop() {
+    read_sensor_sample();
+    if (FlagUpdate == true) {
+      FlagUpdate = false;
+      NumSamples++;
+      }
+  float mean, var;
+  if (NumSamples >= RFA_BUFFER_SIZE) {
+    kfRed.measureMeanVariance(RedCircBuffer, RFA_BUFFER_SIZE, &mean, &var);
+    Serial.printf("Red mean = %f variance = %f\n", mean, var);
+    kfIR.measureMeanVariance(IRCircBuffer, RFA_BUFFER_SIZE, &mean, &var);
+    Serial.printf("IR mean = %f variance = %f\n\n", mean, var);
+    NumSamples = 0;
+    delay(1000);  
+    }
+}
+#else
 
 void loop() {
   bool flagSPO2Valid, flagHRValid;
@@ -188,7 +227,7 @@ void loop() {
     NumSamples++;
     flagSPO2Valid = false;
     flagHRValid  = false;
-    rf_heart_rate_and_oxygen_saturation(CircBufferIndex,IRCircBuffer, RFA_BUFFER_SIZE, RedCircBuffer, &SPO2, &flagSPO2Valid, &HeartRate, &flagHRValid);     
+    rf_heart_rate_and_oxygen_saturation(CircBufferIndex, IRCircBuffer, RedCircBuffer, RFA_BUFFER_SIZE, &SPO2, &flagSPO2Valid, &HeartRate, &flagHRValid);     
 
     if ((flagHRValid == false) && (flagSPO2Valid == false)){
       SensorWatchdogCounter++;
@@ -239,9 +278,10 @@ void loop() {
       }
     } 
   }
- 
+ #endif
   
-void sensor_init() {
+
+static void sensor_init() {
   if (sensor.begin(Wire, I2C_SPEED_FAST) == false) {
     oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "MAX30102 connection");
     oled_print_buffer(false, 0, 16, u8g2_font_t0_14_mr, "problem");
@@ -254,11 +294,11 @@ void sensor_init() {
   // You should test this as per the app note depending on application : finger, forehead, earlobe etc. 
   // It even depends on skin tone. I found that the optimum combination for my index finger was :
   // ledBrightness=30, adcRange=2048, to get max dynamic range in the waveform, and a dc level > 100,000
-  byte ledBrightness = 30; // 0 = off,  255 = 50mA
-  byte ledMode = 2; // 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green (MAX30105 only)
+  uint8_t ledBrightness = 30; // 0 = off,  255 = 50mA
+  uint8_t ledMode = 2; // 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green (MAX30105 only)
   // net sampling rate = sampleRate/sampleAverage = 25
   int sampleRate = 100; // 50, 100, 200, 400, 800, 1000, 1600, 3200
-  byte sampleAverage = 4; // 1, 2, 4, 8, 16, 32
+  uint8_t sampleAverage = 4; // 1, 2, 4, 8, 16, 32
   int pulseWidth = 411; // 69, 118, 215, 411
   int adcRange = 2048; // 2048, 4096, 8192, 16384
   
@@ -268,10 +308,53 @@ void sensor_init() {
   }
     
 
+static void read_sensor_sample(){
+#ifdef USE_KF  
+  float redFiltered, irFiltered, dummy;
+#endif  
+  sensor.check();
+  if (sensor.available())   {
+      float redSample = (float)sensor.getFIFORed();
+      float irSample = (float)sensor.getFIFOIR();
+#ifdef USE_KF      
+      kfRed.update(redSample, RED_ACCEL_VARIANCE, 0.04, &redFiltered, &dummy);
+      kfIR.update(irSample, IR_ACCEL_VARIANCE, 0.04, &irFiltered, &dummy);
+      RedCircBuffer[CircBufferIndex] = redFiltered; 
+      IRCircBuffer[CircBufferIndex] = irFiltered; 
+#else
+      RedCircBuffer[CircBufferIndex] = redSample; 
+      IRCircBuffer[CircBufferIndex] = irSample; 
+#endif      
+      CircBufferIndex++;
+      if (CircBufferIndex >= RFA_BUFFER_SIZE) CircBufferIndex = 0;  
+      sensor.nextSample();
+      FlagUpdate = true;
+      }
+  }
+
+#ifdef USE_KF
+static void measure_mean_variance(float sampleBuf[], int numSamples, float* pMean, float* pVariance) {
+	float mean = 0.0f;
+	float variance = 0.0f;
+	for (int inx = 0; inx < numSamples; inx++) {
+		mean += sampleBuf[inx];
+		}
+	mean /= numSamples;
+	for (int inx = 0; inx < numSamples; inx++) {
+		float d = (sampleBuf[inx] - mean);
+		variance += d*d;
+		}
+	variance /= (numSamples-1);
+	*pMean = mean;
+	*pVariance = variance;
+	return;
+}
+#endif
+
 // turn on Wifi only for the duration of the ThingSpeak connection 
 // current draw with OLED display and WiFi on = ~75mA
 // with OLED display on, WiFi off = ~30mA
-void update_thingspeak(float spo2, float heartRate, float BatteryVoltage) {
+static void update_thingspeak(float spo2, float heartRate, float BatteryVoltage) {
   wifi_on();
   ThingSpeak.setField(1, spo2);
   ThingSpeak.setField(2, (int)(heartRate+0.5f));
@@ -298,8 +381,7 @@ void update_thingspeak(float spo2, float heartRate, float BatteryVoltage) {
   }
 
 
-
-float battery_sample_voltage(void) {
+static float battery_sample_voltage(void) {
   int adcSample = 0;
   for (int inx = 0; inx < 4; inx++) {
     adcSample += analogRead(A0);
@@ -313,7 +395,7 @@ float battery_sample_voltage(void) {
   }  
 
 
-void shut_down(void) {  
+static void shut_down(void) {  
   Serial.println("Going to sleep");
   oled_print_buffer(true, 0, 0, u8g2_font_t0_14_mr, "Going to sleep");
   u8g2.sendBuffer();     
@@ -324,15 +406,4 @@ void shut_down(void) {
   }
 
 
-void read_sensor_sample(){
-  sensor.check();
-  if (sensor.available())   {
-      RedCircBuffer[CircBufferIndex] = sensor.getFIFORed(); 
-      IRCircBuffer[CircBufferIndex] = sensor.getFIFOIR();
-      CircBufferIndex++;
-      if (CircBufferIndex >= RFA_BUFFER_SIZE) CircBufferIndex = 0;  
-      sensor.nextSample();
-      FlagUpdate = true;
-      }
-  }
 

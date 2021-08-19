@@ -70,7 +70,7 @@ const int32_t LOWEST_PERIOD = FS60/MAX_HR; // Minimal distance between peaks
 const int32_t HIGHEST_PERIOD = FS60/MIN_HR; // Maximal distance between peaks
 const float mean_X = (float)(RFA_BUFFER_SIZE-1)/2.0; // Mean value of the set of integers from 0 to RFA_BUFFER_SIZE-1. For ST=4 and FS=50 it's equal to 99.5.
 
-void rf_heart_rate_and_oxygen_saturation(int32_t circ_buffer_index, uint32_t *pun_ir_buffer, int32_t n_ir_buffer_length, uint32_t *pun_red_buffer, float *pn_spo2, bool *pspo2_valid, int32_t *pn_heart_rate, 
+void rf_heart_rate_and_oxygen_saturation(int circ_buffer_index, float *pun_ir_buffer, float *pun_red_buffer, int n_ir_buffer_length,  float *pn_spo2, bool *pspo2_valid, int32_t *pn_heart_rate, 
                                         bool *phr_valid);
 float rf_linear_regression_beta(float *pn_x, float xmean, float sum_x2);
 float rf_autocorrelation(float *pn_x, int32_t n_size, int32_t n_lag);
