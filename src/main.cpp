@@ -39,6 +39,8 @@ extern "C" {
     #include "user_interface.h"  // Required for wifi_station_connect() to work
 }
 
+//#define USE_KF
+
 // config button pin for on-demand Configuration portal
 #define pinCfg         0 
 // PMOS transistor-switched power for OLED display
@@ -50,11 +52,11 @@ extern "C" {
 #define IIR_COEFF      0.98f
 
 #ifdef USE_KF
-#define RED_NOISE_VARIANCE 150.0f
-#define IR_NOISE_VARIANCE  150.0f
+#define RED_NOISE_VARIANCE  150.0f
+#define IR_NOISE_VARIANCE   150.0f
 
-#define RED_MEAN          175000.0f
-#define IR_MEAN           215000.0f
+#define RED_SIGNAL_MEAN     175000.0f
+#define IR_SIGNAL_MEAN      215000.0f
 #define RED_SIGNAL_VARIANCE 20000.0f
 #define IR_SIGNAL_VARIANCE  50000.0f
 #endif
@@ -192,15 +194,17 @@ void setup() {
   CircBufferIndex = 0;
   FlagUpdate = false;
 #ifdef USE_KF  
-  kfRed.configure(RED_NOISE_VARIANCE, RED_SIGNAL_VARIANCE, RED_MEAN, 0.0f);  
-  kfIR.configure(IR_NOISE_VARIANCE, IR_SIGNAL_VARIANCE, IR_MEAN, 0.0f);  
+  kfRed.configure(RED_NOISE_VARIANCE, RED_SIGNAL_VARIANCE, RED_SIGNAL_MEAN, 0.0f);  
+  kfIR.configure(IR_NOISE_VARIANCE, IR_SIGNAL_VARIANCE, IR_SIGNAL_MEAN, 0.0f);  
 #endif
   ticker.attach(0.02, read_sensor_sample); // new sample expected every ~40mS  
   }
 
 
 #if 0
-// used only for measuring the variance of the red and iir signal, which is needed to optimally configure the kalman filter
+// Measure the variance of the red and iir signal, needed to optimally configure the kalman filter
+// cover the sensor with some dark cloth or wadding, to get the sensor noise variance
+// place your finger on the sensor to measure the sensor signal variance
 void loop() {
     read_sensor_sample();
     if (FlagUpdate == true) {
@@ -317,8 +321,8 @@ static void read_sensor_sample(){
       float redSample = (float)sensor.getFIFORed();
       float irSample = (float)sensor.getFIFOIR();
 #ifdef USE_KF      
-      kfRed.update(redSample, RED_ACCEL_VARIANCE, 0.04, &redFiltered, &dummy);
-      kfIR.update(irSample, IR_ACCEL_VARIANCE, 0.04, &irFiltered, &dummy);
+      kfRed.update(redSample, RED_SIGNAL_VARIANCE, 0.04, &redFiltered, &dummy);
+      kfIR.update(irSample, IR_SIGNAL_VARIANCE, 0.04, &irFiltered, &dummy);
       RedCircBuffer[CircBufferIndex] = redFiltered; 
       IRCircBuffer[CircBufferIndex] = irFiltered; 
 #else
