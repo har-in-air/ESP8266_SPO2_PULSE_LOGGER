@@ -55,7 +55,7 @@ the Json 6 library uses a completely different API.
 
 ## RF auto-correlation algorithm versus FFT spectral analysis
 
-Robert Fraczkiewicz's libary uses an auto-correlation algorithm on the sensor red led waveform to compute heart-rate. I've [archived](RFA_versus_FFT_for_heartrate.zip) a project that uses FFT spectral analysis of the sensor red led waveform to compute heart-rate. 
+Robert Fraczkiewicz's libary uses an auto-correlation algorithm on the sensor red led waveform to compute heart-rate. I've [archived](docs/RFA_versus_FFT_for_heartrate.zip) a project that uses FFT spectral analysis of the sensor red led waveform to compute heart-rate. 
 
 ## Usage
 
